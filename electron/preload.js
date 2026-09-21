@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('televault', {
     addAccount: () => ipcRenderer.invoke('session:addAccount'),
     resetTelegramApi: () => ipcRenderer.invoke('session:resetTelegramApi'),
     factoryReset: () => ipcRenderer.invoke('session:factoryReset'),
+    checkAccountStatus: () => ipcRenderer.invoke('session:checkAccountStatus'),
     onChanged: (callback) => {
       const listener = (_evt, state) => callback(state);
       ipcRenderer.on('session:changed', listener);
@@ -33,10 +34,12 @@ contextBridge.exposeInMainWorld('televault', {
     getTree: (expanded) => ipcRenderer.invoke('vault:getTree', { expanded }),
     getStats: () => ipcRenderer.invoke('vault:getStats'),
     getDashboard: (rangeDays) => ipcRenderer.invoke('vault:getDashboard', { rangeDays }),
+    getDayFiles: (date, limit) => ipcRenderer.invoke('vault:getDayFiles', { date, limit }),
     search: (query, tags) => ipcRenderer.invoke('vault:search', { query, tags }),
     allTags: () => ipcRenderer.invoke('vault:allTags'),
     getFolderTags: (folderPath) => ipcRenderer.invoke('vault:getFolderTags', { folderPath }),
     allFolders: () => ipcRenderer.invoke('vault:allFolders'),
+    getFoldersDetails: (paths) => ipcRenderer.invoke('vault:getFoldersDetails', { paths }),
     createFolder: (parentFolder, name) =>
       ipcRenderer.invoke('vault:createFolder', { parentFolder, name }),
     renameFile: (messageId, newName) =>
@@ -47,6 +50,9 @@ contextBridge.exposeInMainWorld('televault', {
       ipcRenderer.invoke('vault:moveFile', { messageId, destFolder }),
     moveFolder: (folderPath, destFolder) =>
       ipcRenderer.invoke('vault:moveFolder', { folderPath, destFolder }),
+    moveEntries: (messageIds, folders, destination) =>
+      ipcRenderer.invoke('vault:moveEntries', { messageIds, folders, destination }),
+    cancelMove: () => ipcRenderer.invoke('vault:cancelMove'),
     trash: (messageIds, folders) =>
       ipcRenderer.invoke('vault:trash', { messageIds, folders }),
     restore: (messageIds, folders) =>
@@ -58,6 +64,9 @@ contextBridge.exposeInMainWorld('televault', {
     renameTag: (from, to) => ipcRenderer.invoke('vault:renameTag', { from, to }),
     deleteTag: (tag) => ipcRenderer.invoke('vault:deleteTag', { tag }),
     checkDuplicate: (sha256) => ipcRenderer.invoke('vault:checkDuplicate', { sha256 }),
+    scanDuplicates: () => ipcRenderer.invoke('vault:scanDuplicates'),
+    resolveDuplicateGroup: ({ keepMessageId, trashMessageIds }) =>
+      ipcRenderer.invoke('vault:resolveDuplicateGroup', { keepMessageId, trashMessageIds }),
     pickUploadFiles: () => ipcRenderer.invoke('vault:pickUploadFiles'),
     pickUploadFolder: () => ipcRenderer.invoke('vault:pickUploadFolder'),
     uploadPaths: (localPaths, destFolder) =>
@@ -75,6 +84,8 @@ contextBridge.exposeInMainWorld('televault', {
     readFileText: (messageId) => ipcRenderer.invoke('vault:readFileText', { messageId }),
     getTransfers: () => ipcRenderer.invoke('vault:getTransfers'),
     cancelTransfer: (taskId) => ipcRenderer.invoke('vault:cancelTransfer', { taskId }),
+    retryTransfer: (taskId) => ipcRenderer.invoke('vault:retryTransfer', { taskId }),
+    resumeTransfer: (taskId) => ipcRenderer.invoke('vault:resumeTransfer', { taskId }),
     clearFinishedTransfers: () => ipcRenderer.invoke('vault:clearFinishedTransfers'),
     onChanged: (callback) => {
       const listener = () => callback();
@@ -85,6 +96,16 @@ contextBridge.exposeInMainWorld('televault', {
       const listener = () => callback();
       ipcRenderer.on('transfers:changed', listener);
       return () => ipcRenderer.removeListener('transfers:changed', listener);
+    },
+    onDeleteProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('vault:deleteProgress', listener);
+      return () => ipcRenderer.removeListener('vault:deleteProgress', listener);
+    },
+    onMoveProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('vault:moveProgress', listener);
+      return () => ipcRenderer.removeListener('vault:moveProgress', listener);
     },
   },
   sharedVault: {
@@ -109,6 +130,11 @@ contextBridge.exposeInMainWorld('televault', {
     pickSaveAsDirectory: () => ipcRenderer.invoke('settings:pickSaveAsDirectory'),
     clearSaveAsDirectory: () => ipcRenderer.invoke('settings:clearSaveAsDirectory'),
   },
+  backup: {
+    export: (includeSessions) =>
+      ipcRenderer.invoke('backup:export', { includeSessions: Boolean(includeSessions) }),
+    import: () => ipcRenderer.invoke('backup:import'),
+  },
   sync: {
     getConfig: () => ipcRenderer.invoke('sync:getConfig'),
     setConfig: (config) => ipcRenderer.invoke('sync:setConfig', config),
@@ -126,7 +152,9 @@ contextBridge.exposeInMainWorld('televault', {
   },
   gdrive: {
     getStatus: () => ipcRenderer.invoke('gdrive:getStatus'),
+    saveCredentials: (clientId, clientSecret) => ipcRenderer.invoke('gdrive:saveCredentials', { clientId, clientSecret }),
     connect: (clientId, clientSecret) => ipcRenderer.invoke('gdrive:connect', { clientId, clientSecret }),
+    cancelConnect: () => ipcRenderer.invoke('gdrive:cancelConnect'),
     disconnect: () => ipcRenderer.invoke('gdrive:disconnect'),
     setPaused: (paused) => ipcRenderer.invoke('gdrive:setPaused', { paused }),
     listFolder: (folderId) => ipcRenderer.invoke('gdrive:listFolder', { folderId }),
@@ -134,20 +162,54 @@ contextBridge.exposeInMainWorld('televault', {
     removeSubscription: (driveId) => ipcRenderer.invoke('gdrive:removeSubscription', { driveId }),
     toggleSubscription: (driveId, enabled) => ipcRenderer.invoke('gdrive:toggleSubscription', { driveId, enabled }),
     getSubscriptions: () => ipcRenderer.invoke('gdrive:getSubscriptions'),
-    scanNow: () => ipcRenderer.invoke('gdrive:scanNow'),
+    checkConnection: () => ipcRenderer.invoke('gdrive:checkConnection'),
+    scanNow: (opts) => ipcRenderer.invoke('gdrive:scanNow', opts),
+    abortScan: () => ipcRenderer.invoke('gdrive:abortScan'),
+    startSync: () => ipcRenderer.invoke('gdrive:startSync'),
+    setAutoSyncAfterScan: (enabled) => ipcRenderer.invoke('gdrive:setAutoSyncAfterScan', { enabled }),
     retryFile: (driveFileId) => ipcRenderer.invoke('gdrive:retryFile', { driveFileId }),
     setPollInterval: (intervalMs) => ipcRenderer.invoke('gdrive:setPollInterval', { intervalMs }),
     setFilters: (ignored, allowed) => ipcRenderer.invoke('gdrive:setFilters', { ignored, allowed }),
     setTempDir: (tempDir) => ipcRenderer.invoke('gdrive:setTempDir', { tempDir }),
+    openDownloadFolder: (opts) => ipcRenderer.invoke('gdrive:openDownloadFolder', opts),
+    setConflictPolicy: (policy) => ipcRenderer.invoke('gdrive:setConflictPolicy', { policy }),
+    setPropagateDeletes: (enabled) => ipcRenderer.invoke('gdrive:setPropagateDeletes', { enabled }),
     removeQueueItem: (driveFileId) => ipcRenderer.invoke('gdrive:removeQueueItem', { driveFileId }),
+    removeQueueBatch: (driveFileIds) => ipcRenderer.invoke('gdrive:removeQueueBatch', { driveFileIds }),
+    clearQueue: () => ipcRenderer.invoke('gdrive:clearQueue'),
+    skipItem: (driveFileId) => ipcRenderer.invoke('gdrive:skipItem', { driveFileId }),
     clearErrors: () => ipcRenderer.invoke('gdrive:clearErrors'),
     clearHistory: () => ipcRenderer.invoke('gdrive:clearHistory'),
     removeErrorItem: (driveFileId) => ipcRenderer.invoke('gdrive:removeErrorItem', { driveFileId }),
     removeHistoryItem: (driveFileId) => ipcRenderer.invoke('gdrive:removeHistoryItem', { driveFileId }),
+    listProgressImportSources: () => ipcRenderer.invoke('gdrive:listProgressImportSources'),
+    importProgressFromAccount: (sourceAccountId) =>
+      ipcRenderer.invoke('gdrive:importProgressFromAccount', { sourceAccountId }),
+    exportProgress: () => ipcRenderer.invoke('gdrive:exportProgress'),
+    importProgress: () => ipcRenderer.invoke('gdrive:importProgress'),
+    getSyncTargets: () => ipcRenderer.invoke('gdrive:getSyncTargets'),
+    setSyncTarget: (chatId) => ipcRenderer.invoke('gdrive:setSyncTarget', { chatId }),
+    rescanSyncTargetVault: () => ipcRenderer.invoke('gdrive:rescanSyncTargetVault'),
+    queryCacheFiles: (opts) => ipcRenderer.invoke('gdrive:queryCacheFiles', opts),
+    getCacheSummary: () => ipcRenderer.invoke('gdrive:getCacheSummary'),
+    requeueCacheFile: (driveFileId) => ipcRenderer.invoke('gdrive:requeueCacheFile', { driveFileId }),
+    requeueAllPending: (opts) => ipcRenderer.invoke('gdrive:requeueAllPending', opts),
+    reconcileExisting: () => ipcRenderer.invoke('gdrive:reconcileExisting'),
+    exportCacheCsv: (opts) => ipcRenderer.invoke('gdrive:exportCacheCsv', opts),
+    queryFolderTree: (opts) => ipcRenderer.invoke('gdrive:queryFolderTree', opts),
+    searchFolders: (opts) => ipcRenderer.invoke('gdrive:searchFolders', opts),
+    getFolderAncestors: (opts) => ipcRenderer.invoke('gdrive:getFolderAncestors', opts),
+    queryFolderChildren: (opts) => ipcRenderer.invoke('gdrive:queryFolderChildren', opts),
+    syncFolder: (opts) => ipcRenderer.invoke('gdrive:syncFolder', opts),
     onChanged: (callback) => {
       const listener = (_evt, snapshot) => callback(snapshot);
       ipcRenderer.on('gdrive:changed', listener);
       return () => ipcRenderer.removeListener('gdrive:changed', listener);
+    },
+    onProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('gdrive:progress', listener);
+      return () => ipcRenderer.removeListener('gdrive:progress', listener);
     },
   },
   window: {

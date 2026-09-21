@@ -1,6 +1,7 @@
 import { useI18n } from '../context/I18nContext';
 import {
   IconClose,
+  IconDeleteForever,
   IconDownload,
   IconMoveTo,
   IconMoreVert,
@@ -34,25 +35,50 @@ export function DriveSelectionBar({
   onDeleteForever,
   onMore,
   readonly = false,
+  deleteForeverBusy = false,
 }) {
   const { t } = useI18n();
 
   return (
     <div className="gd-selection-bar">
-      <button type="button" className="gd-selection-clear" onClick={onClear} aria-label={t('cancel')}>
+      <button
+        type="button"
+        className="gd-selection-clear"
+        onClick={onClear}
+        aria-label={t('cancel')}
+        disabled={deleteForeverBusy}
+      >
         <IconClose className="h-5 w-5" />
       </button>
-      <span className="gd-selection-count">{t('selectedCount', { n: count })}</span>
+      <span className="gd-selection-count">
+        {deleteForeverBusy ? t('deleteForeverProgress') : t('selectedCount', { n: count })}
+      </span>
       <div className="gd-selection-actions">
         {isTrash ? (
           <>
             {!readonly && (
               <>
-                <SelectionAction label={t('restore')} onClick={onRestore}>
+                <SelectionAction
+                  label={t('restore')}
+                  onClick={onRestore}
+                  disabled={deleteForeverBusy}
+                >
                   <IconRestore className="h-5 w-5" />
                 </SelectionAction>
-                <SelectionAction label={t('deleteForever')} onClick={onDeleteForever}>
-                  <IconTrash className="h-5 w-5" />
+                <SelectionAction
+                  label={t('deleteForever')}
+                  onClick={onDeleteForever}
+                  disabled={deleteForeverBusy}
+                >
+                  {deleteForeverBusy ? (
+                    <span
+                      className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                      role="status"
+                      aria-label={t('deleteForeverProgress')}
+                    />
+                  ) : (
+                    <IconDeleteForever className="h-5 w-5" />
+                  )}
                 </SelectionAction>
               </>
             )}
@@ -75,7 +101,7 @@ export function DriveSelectionBar({
           </>
         )}
         {!readonly && onMore && (
-          <SelectionAction label={t('moreActions')} onClick={onMore}>
+          <SelectionAction label={t('moreActions')} onClick={onMore} disabled={deleteForeverBusy}>
             <IconMoreVert className="h-5 w-5" />
           </SelectionAction>
         )}

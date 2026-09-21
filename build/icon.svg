@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- macOS squircle shadow: Apple HIG standard -->
+    <filter id="shadow" x="-15%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.24" />
+    </filter>
+  </defs>
+  
+  <!-- Rounded squircle base (Apple HIG macOS standard: 824x824 at (100, 100) with r=185) -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#ffffff" filter="url(#shadow)" stroke="rgba(0,0,0,0.08)" stroke-width="1.5" />
+  
+  <!-- Centered geometric brand motif -->
+  <g transform="translate(116, 182) scale(16.5)">
+    <!-- Top Green Polygon -->
+    <path fill="#34A853" d="M14 20L22 6h12l-8 14H14z" />
+    <!-- Bottom Blue Trapezoid -->
+    <path fill="#4285F4" d="M6 34L14 20h20l8 14H6z" />
+  </g>
+</svg>

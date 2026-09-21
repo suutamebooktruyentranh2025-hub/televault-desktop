@@ -104,7 +104,7 @@ export function GDriveFilePicker({ onConfirm, onCancel }) {
         {/* Destination Vault Path Config */}
         <div className="px-5 py-3 border-b border-gray-100 dark:border-zinc-800 flex items-center gap-3">
           <label className="text-xs font-semibold whitespace-nowrap opacity-80 text-[var(--gd-text)]">
-            Lưu vào Vault:
+            {t('saveToVault')}
           </label>
           <input
             type="text"

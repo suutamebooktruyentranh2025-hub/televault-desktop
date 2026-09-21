@@ -50,7 +50,39 @@ function registerSessionHandlers(ctx) {
   let syncService = null;
   let gdriveSyncService = null;
 
-  const telegram = new TelegramCoordinator({
+  /** @type {TelegramCoordinator} */
+  let telegram;
+
+  function createGDriveSyncService() {
+    return new GDriveSyncService({
+      db: telegram.db,
+      vault: telegram.vault,
+      getPersonalVault: () => telegram.vault,
+      resolveVault: async (chatId) => {
+        if (chatId == null || chatId === '') {
+          if (!telegram.vault) throw new Error('Personal vault not ready');
+          return telegram.vault;
+        }
+        const mgr = telegram.sharedVaults;
+        if (!mgr) throw new Error('Shared vaults not ready');
+        if (!telegram.queue) throw new Error('Transfer queue not ready');
+        return mgr.ensureUploadVault(chatId, {
+          queue: telegram.queue,
+          onChange: () => {
+            if (typeof broadcastGDriveChanged === 'function') broadcastGDriveChanged();
+          },
+        });
+      },
+      onChange: () => {
+        if (typeof broadcastGDriveChanged === 'function') broadcastGDriveChanged();
+      },
+      onProgress: (payload) => {
+        if (typeof broadcastGDriveProgress === 'function') broadcastGDriveProgress(payload);
+      },
+    });
+  }
+
+  telegram = new TelegramCoordinator({
     userDataPath: getActiveUserDataPath(),
     onAccountInfo: (info) => {
       const activeId = accountManager.getActiveAccountId();
@@ -74,14 +106,8 @@ function registerSessionHandlers(ctx) {
         await syncService.start().catch((err) => console.error('[SyncService start failed]', err));
       }
       if (telegram.db && telegram.vault && !gdriveSyncService) {
-        gdriveSyncService = new GDriveSyncService({
-          db: telegram.db,
-          vault: telegram.vault,
-          onChange: () => {
-            if (typeof broadcastGDriveChanged === 'function') broadcastGDriveChanged();
-          },
-        });
-        gdriveSyncService.startPolling();
+        gdriveSyncService = createGDriveSyncService();
+        await gdriveSyncService.startPolling().catch((err) => console.error('[gdrive startPolling failed]', err));
       }
     },
     onChange: () => {
@@ -103,14 +129,8 @@ function registerSessionHandlers(ctx) {
             await syncService.start().catch((err) => console.error('[SyncService start failed]', err));
           }
           if (!gdriveSyncService) {
-            gdriveSyncService = new GDriveSyncService({
-              db: telegram.db,
-              vault: telegram.vault,
-              onChange: () => {
-                if (typeof broadcastGDriveChanged === 'function') broadcastGDriveChanged();
-              },
-            });
-            gdriveSyncService.startPolling();
+            gdriveSyncService = createGDriveSyncService();
+            await gdriveSyncService.startPolling().catch((err) => console.error('[gdrive startPolling failed]', err));
           }
         } else {
           if (syncService) {
@@ -118,7 +138,8 @@ function registerSessionHandlers(ctx) {
             syncService = null;
             if (typeof broadcastSyncChanged === 'function') broadcastSyncChanged();
           }
-          if (gdriveSyncService) {
+          // Keep gdriveSyncService active as long as telegram.db exists
+          if (!telegram.db && gdriveSyncService) {
             gdriveSyncService.stopPolling();
             gdriveSyncService = null;
             if (typeof broadcastGDriveChanged === 'function') broadcastGDriveChanged();
@@ -133,8 +154,10 @@ function registerSessionHandlers(ctx) {
     getVault: () => telegram.vault,
     getQueue: () => telegram.queue,
     getChannel: () => telegram.channel,
+    getSharedVaults: () => telegram.sharedVaults,
     isReady: () => phase === 'ready' && Boolean(telegram.db),
     guardUpload,
+    onCancelJournal: () => telegram.clearFloodWait(),
   });
 
   registerSharedVaultHandlers(ipcMain, {
@@ -151,10 +174,24 @@ function registerSessionHandlers(ctx) {
     isReady: () => phase === 'ready' && Boolean(telegram.db),
   });
 
-  const { broadcastGDriveChanged } = registerGDriveHandlers(ipcMain, {
+  const { broadcastGDriveChanged, broadcastGDriveProgress } = registerGDriveHandlers(ipcMain, {
     getDb: () => telegram.db,
-    getGDriveSyncService: () => gdriveSyncService,
+    getGDriveSyncService: () => {
+      if (gdriveSyncService) return gdriveSyncService;
+      if (telegram?.db) {
+        gdriveSyncService = createGDriveSyncService();
+        gdriveSyncService.startPolling().catch((err) => console.error('[gdrive startPolling failed]', err));
+        return gdriveSyncService;
+      }
+      return null;
+    },
+    getSharedVaults: () => telegram.sharedVaults,
+    getPersonalVaultChatId: () => telegram.chatId ?? telegram.vault?.chatId ?? null,
     isReady: () => phase === 'ready' && Boolean(telegram.db),
+    getActiveAccountId: () => accountManager.getActiveAccountId(),
+    listAccounts: () => accountManager.getAccounts(),
+    getAccountDir: (id) => path.join(ctx.userDataPath, 'accounts', id),
+    getAppVersion: () => require('electron').app.getVersion(),
   });
 
   function telegramSnapshot() {
@@ -238,6 +275,7 @@ function registerSessionHandlers(ctx) {
       scannedCount: tgSnap.scannedCount,
       entryCount: tgSnap.entryCount,
       bootError: tgSnap.bootError,
+      floodWaitSec: tgSnap.floodWaitSec || 0,
       telegramRestartRecommended,
       accounts: accountManager.getAccounts(),
       activeAccountId: accountManager.getActiveAccountId(),
@@ -267,6 +305,9 @@ function registerSessionHandlers(ctx) {
   ipcMain.handle('session:getState', async () => {
     await recomputePhase();
     return buildState();
+  });
+  ipcMain.handle('session:checkAccountStatus', async () => {
+    return telegram.checkAccountStatus();
   });
 
 
@@ -439,6 +480,106 @@ function registerSessionHandlers(ctx) {
     }
     app.relaunch();
     app.exit(0);
+  });
+
+  ipcMain.handle('backup:export', async (_evt, { includeSessions = false } = {}) => {
+    const { app, dialog, BrowserWindow } = require('electron');
+    const { createAppBackupArchive } = require('../backup/appBackup');
+    const account_id = accountManager.getActiveAccountId() || 'default';
+    const account_dir = getActiveUserDataPath();
+    const index_path = path.join(account_dir, 'index.db');
+    const fs = require('fs');
+    if (!fs.existsSync(index_path)) {
+      return { ok: false, error: 'index.db_not_found' };
+    }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const save_result = await dialog.showSaveDialog(win, {
+      title: 'Export TeleVault backup',
+      defaultPath: `televault-backup-${stamp}.televault-backup.zip`,
+      filters: [{ name: 'TeleVault Backup', extensions: ['televault-backup.zip', 'zip'] }],
+    });
+    if (save_result.canceled || !save_result.filePath) {
+      return { ok: false, cancelled: true };
+    }
+
+    let zip_path = save_result.filePath;
+    if (!zip_path.endsWith('.zip')) {
+      zip_path = `${zip_path}.televault-backup.zip`;
+    }
+
+    try {
+      // Prefer a consistent on-disk snapshot: pause Drive polling briefly.
+      gdriveSyncService?.stopPolling?.();
+      const result = await createAppBackupArchive({
+        accountDir: account_dir,
+        userDataPath: ctx.userDataPath,
+        accountId: account_id,
+        zipPath: zip_path,
+        includeSessions: Boolean(includeSessions),
+        appVersion: app.getVersion(),
+      });
+      gdriveSyncService?.startPolling?.()?.catch((err) => console.error('[gdrive startPolling failed]', err));
+      return { ok: true, path: result.zipPath, includesSessions: result.includesSessions };
+    } catch (e) {
+      gdriveSyncService?.startPolling?.()?.catch((err) => console.error('[gdrive startPolling failed]', err));
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle('backup:import', async () => {
+    const { app, dialog, BrowserWindow } = require('electron');
+    const { restoreAppBackupArchive } = require('../backup/appBackup');
+    const fs = require('fs');
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const open_result = await dialog.showOpenDialog(win, {
+      title: 'Import TeleVault backup',
+      properties: ['openFile'],
+      filters: [{ name: 'TeleVault Backup', extensions: ['televault-backup.zip', 'zip'] }],
+    });
+    if (open_result.canceled || !open_result.filePaths?.[0]) {
+      return { ok: false, cancelled: true };
+    }
+
+    const zip_path = open_result.filePaths[0];
+    const account_id = accountManager.getActiveAccountId() || 'default';
+    const account_dir = getActiveUserDataPath();
+
+    try {
+      if (syncService) {
+        await syncService.stop().catch(() => {});
+        syncService = null;
+      }
+      if (gdriveSyncService) {
+        gdriveSyncService.stopPolling();
+        gdriveSyncService = null;
+      }
+      await telegram.shutdown();
+
+      // Ensure parent dirs exist after wipe/fresh install.
+      fs.mkdirSync(account_dir, { recursive: true });
+      fs.mkdirSync(ctx.userDataPath, { recursive: true });
+
+      // Keep accounts.json pointing at this account id if missing.
+      if (!accountManager.getActiveAccountId()) {
+        accountManager.addOrUpdateAccount(account_id, { name: account_id });
+        accountManager.setActiveAccount(account_id);
+      }
+
+      await restoreAppBackupArchive({
+        zipPath: zip_path,
+        accountDir: account_dir,
+        userDataPath: ctx.userDataPath,
+        accountId: account_id,
+      });
+
+      app.relaunch();
+      app.exit(0);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
   });
 
   return { hydrate, getState: buildState, broadcastState };

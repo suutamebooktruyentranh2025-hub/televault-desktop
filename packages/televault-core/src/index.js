@@ -8,4 +8,6 @@ module.exports = {
   ...require('./folderTags'),
   ...require('./vaultOps'),
   ...require('./dashboardAggregator'),
+  ...require('./duplicateScanner'),
+  ...require('./duplicateListView'),
 };

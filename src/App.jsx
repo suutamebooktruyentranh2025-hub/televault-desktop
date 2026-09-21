@@ -37,7 +37,7 @@ export default function App() {
       />
     );
   } else if (state.phase === 'syncing') {
-    content = <SyncingScreen scannedCount={state.scannedCount || 0} />;
+    content = <SyncingScreen scannedCount={state.scannedCount || 0} floodWaitSec={state.floodWaitSec || 0} />;
   } else {
     content = (
       <VaultShell
@@ -46,6 +46,7 @@ export default function App() {
         onSignOut={signOut}
         onSwitchAccount={switchAccount}
         onAddAccount={addAccount}
+        floodWaitSec={state.floodWaitSec || 0}
       />
     );
   }

@@ -1,10 +1,15 @@
-const fs = require('fs');
-const crypto = require('crypto');
-const path = require('path');
 const { GDriveAuth } = require('./gdriveAuth');
 const { GDriveApi } = require('./gdriveApi');
 const { ApiRateLimiter } = require('./apiRateLimiter');
 const { SyncThrottleController } = require('./syncThrottleController');
+const { createSpeedTracker } = require('../transfer/transferMetrics');
+const { isAuthError, FRIENDLY_AUTH_ERROR_MSG } = require('./gdriveFloodController');
+const { buildVaultLookupIndex } = require('./gdriveDiscovery');
+
+const { downloaderMethods } = require('./gdriveFileDownloader');
+const { uploaderMethods } = require('./gdriveFileUploader');
+const { queueWorkerMethods } = require('./gdriveQueueWorker');
+const { scannerMethods } = require('./gdriveScanner');
 
 /**
  * @typedef {'idle'|'syncing'|'error'|'disconnected'} GDriveSyncStatus
@@ -16,18 +21,34 @@ class GDriveSyncService {
    *   db: import('../db/indexDb').ReturnType<import('../db/indexDb').openIndexDb>,
    *   vault: import('../vault/vaultService').VaultService,
    *   onChange?: () => void,
+   *   onProgress?: (payload: { currentSyncFile: string|null, currentSyncProgress: number, speedBps: number }) => void,
+   *   resolveVault?: (chatId: string|null) => Promise<import('../vault/vaultService').VaultService>,
+   *   getPersonalVault?: () => import('../vault/vaultService').VaultService,
    * }} opts
    */
-  constructor({ db, vault, onChange }) {
+  constructor({ db, vault, onChange, onProgress, resolveVault, getPersonalVault, throttleOpts = {} }) {
     this.db = db;
     this.vault = vault;
     this.onChange = onChange || (() => {});
+    this.onProgress = onProgress || (() => {});
+    this.resolveVault = resolveVault || (async () => this.vault);
+    this.getPersonalVault = getPersonalVault || (() => this.vault);
     this.rateLimiter = new ApiRateLimiter();
-    this.throttleController = new SyncThrottleController();
-    this.auth = new GDriveAuth({ db });
+    this.throttleController = new SyncThrottleController({
+      minConcurrency: 1,
+      maxConcurrency: 3,
+      scaleUpAfter: 2,
+      ...throttleOpts,
+    });
+    this.auth = new GDriveAuth({
+      db,
+      onAuthUrl: () => {
+        if (typeof this.onChange === 'function') this.onChange();
+      },
+    });
     this.api = new GDriveApi({ auth: this.auth, rateLimiter: this.rateLimiter });
     /** @type {GDriveSyncStatus} */
-    this.isPaused = this.db.gdriveStateGet('is_paused') === '1';
+    this.isPaused = this.db?.gdriveStateGet?.('is_paused') === '1';
     /** @type {GDriveSyncStatus | 'paused'} */
     this.status = this.isPaused ? 'paused' : (this.auth.isConnected() ? 'idle' : 'disconnected');
     this.lastSyncAt = null;
@@ -37,25 +58,102 @@ class GDriveSyncService {
     this.syncedCount = 0;
     this.currentSyncFile = null;
     this.currentSyncProgress = 0;
+    this._currentSpeedBps = 0;
+    /** @type {'download'|'hash'|'upload'|null} */
+    this._syncPhase = null;
+    /** @type {number} 0..1 Drive download fraction */
+    this._downloadFraction = 0;
+    /** @type {number} 0..1 Telegram upload fraction */
+    this._uploadFraction = 0;
+    this._downloadSpeedTracker = createSpeedTracker();
     this._lastProgressNotifyAt = 0;
     this.scanPhase = null; // 'scanning' | 'syncing' | null
     this.scanInfo = null;  // { currentFolder, filesFound }
     /** @type {NodeJS.Timeout | null} */
     this._pollTimer = null;
+    this._lifecycleGeneration = 0;
     this._syncInProgress = false;
     this._queueWorkerRunning = false;
     this._activeWorkers = 0;
-    
-    const savedPoll = this.db.gdriveStateGet('poll_interval_ms');
+    this._workerIdSeq = 0;
+    /** @type {Map<string, AbortController>} */
+    this._workerControllers = new Map();
+    /** @type {AbortController | null} */
+    this._retryController = null;
+    /** @type {Map<string, Set<string>>} */
+    this._folderIdCache = new Map();
+    /** @type {number} epoch ms — pause Drive queue/downloads until Telegram flood clears */
+    this._telegramFloodUntil = 0;
+    const savedPoll = this.db?.gdriveStateGet?.('poll_interval_ms');
     this._pollIntervalMs = savedPoll !== undefined && savedPoll !== null && savedPoll !== '' 
       ? parseInt(savedPoll, 10) 
       : 5 * 60 * 1000; // default 5 min
 
     if (this.auth.isConnected()) {
       this.pendingCount = this.db.gdriveSyncQueueCount();
-      if (!this.isPaused) {
+      if (!this.isPaused && this.isAutoSyncEnabled()) {
         this._startQueueWorker();
       }
+    }
+
+    this._syncTargetReady = this._applySavedSyncTarget().catch((err) => {
+      console.warn('[GDriveSyncService] apply sync target failed:', err?.message || err);
+    });
+  }
+
+  isAutoSyncEnabled() {
+    return typeof this.db?.gdriveStateGet === 'function'
+      ? this.db.gdriveStateGet('auto_sync_after_scan', '1') !== '0'
+      : true;
+  }
+
+  /** Vault file index for the active sync target (personal or shared). */
+  _vaultEntries() {
+    const vault_db = this.vault?.db;
+    if (vault_db && typeof vault_db.getAll === 'function') return vault_db.getAll();
+    if (typeof this.db?.getAll === 'function') return this.db.getAll();
+    return [];
+  }
+
+  getSyncTargetChatId() {
+    const raw = this.db?.gdriveStateGet?.('sync_target_chat_id', '');
+    return raw ? String(raw) : '';
+  }
+
+  /**
+   * @param {string|number|null|undefined} chatId empty/null = personal vault
+   */
+  async setSyncTargetChatId(chatId) {
+    const normalized = chatId == null || chatId === '' ? '' : String(chatId);
+    this.db.gdriveStateSet('sync_target_chat_id', normalized);
+    try {
+      const next_vault = await this.resolveVault(normalized || null);
+      if (!next_vault) throw new Error('Vault target unavailable');
+      this.vault = next_vault;
+      this.lastError = null;
+    } catch (e) {
+      this.db.gdriveStateSet('sync_target_chat_id', '');
+      this.vault = this.getPersonalVault();
+      this.lastError = String(e.message || e);
+      if (typeof this.onChange === 'function') this.onChange();
+      throw e;
+    }
+    if (typeof this.onChange === 'function') this.onChange();
+  }
+
+  async _applySavedSyncTarget() {
+    const saved = this.getSyncTargetChatId();
+    if (!saved) {
+      this.vault = this.getPersonalVault();
+      return;
+    }
+    try {
+      const next_vault = await this.resolveVault(saved);
+      if (next_vault) this.vault = next_vault;
+    } catch (e) {
+      console.warn('[GDriveSyncService] saved sync target unavailable, using personal for this session:', e?.message || e);
+      this.vault = this.getPersonalVault();
+      this.lastError = String(e.message || e);
     }
   }
 
@@ -68,645 +166,299 @@ class GDriveSyncService {
       this.status = 'paused';
       this._queueWorkerRunning = false;
       this._activeWorkers = 0;
+      for (const active_controller of this._workerControllers.values()) {
+        active_controller.abort();
+      }
+      this._workerControllers.clear();
+      this.db.gdriveSyncQueueReleaseAllRunning();
       this.stopPolling();
     } else {
       this.status = this.auth.isConnected() ? 'idle' : 'disconnected';
       if (this.auth.isConnected()) {
         this._startQueueWorker();
-        this.startPolling();
+        this.startPolling().catch((err) => console.error('[GDriveSyncService] startPolling failed:', err?.message || err));
       }
     }
-    this.onChange();
+    if (typeof this.onChange === 'function') this.onChange();
   }
 
   getSnapshot() {
     return {
       isPaused: this.isPaused,
       status: this.status,
-      connected: this.auth.isConnected(),
-      email: this.auth.email,
+      connected: this.auth?.isConnected?.() || false,
+      email: this.auth?.email || '',
       lastSyncAt: this.lastSyncAt,
       pendingCount: this.pendingCount,
       totalCount: Math.max(this.totalCount || 0, this.pendingCount + (this.syncedCount || 0)),
       syncedCount: this.syncedCount || 0,
       currentSyncFile: this.currentSyncFile || null,
       currentSyncProgress: this.currentSyncProgress,
-      syncQueue: this.db.gdriveSyncQueueGetAll(),
+      speedBps: this._currentSpeedBps || 0,
+      syncPhase: this._syncPhase || null,
+      downloadProgress: this._downloadFraction || 0,
+      uploadProgress: this._uploadFraction || 0,
+      activeTasks: Array.from(this._activeWorkersMap?.values?.() || []).map((t) => ({
+        workerId: t.workerId,
+        driveFileId: t.driveFileId,
+        fileName: t.fileName,
+        size: t.size,
+        drivePath: t.drivePath,
+        vaultPath: t.vaultPath,
+        phase: t.phase,
+        progress: t.progress,
+        downloadProgress: t.downloadProgress !== undefined ? t.downloadProgress : (t.phase === 'download' ? t.progress : 1),
+        uploadProgress: t.uploadProgress !== undefined ? t.uploadProgress : (t.phase === 'upload' ? t.progress : 0),
+        speedBps: t.speedBps || 0,
+        startedAt: t.startedAt,
+      })),
+      syncQueue: this.db?.gdriveSyncQueueGetAll?.() || [],
       scanPhase: this.scanPhase,
       scanInfo: this.scanInfo,
-      recentSynced: this.db.gdriveManifestRecent() || [],
+      recentSynced: this.db?.gdriveManifestRecent?.() || [],
       lastError: this.lastError,
       pollIntervalMs: this._pollIntervalMs,
-      subscriptions: this.db.gdriveSubscriptionsAll(),
-      syncErrors: this.db.gdriveSyncErrorsAll(),
-      ignoredExtensions: this.db.gdriveStateGet('ignored_extensions', ''),
-      allowedExtensions: this.db.gdriveStateGet('allowed_extensions', ''),
-      tempDownloadDir: this.db.gdriveStateGet('temp_download_dir', ''),
+      subscriptions: this.db?.gdriveSubscriptionsAll?.() || [],
+      syncErrors: this.db?.gdriveSyncErrorsAll?.() || [],
+      ignoredExtensions: this.db?.gdriveStateGet?.('ignored_extensions', '') || '',
+      allowedExtensions: this.db?.gdriveStateGet?.('allowed_extensions', '') || '',
+      tempDownloadDir: this.db?.gdriveStateGet?.('temp_download_dir', '') || '',
+      conflictPolicy: this.db?.gdriveStateGet?.('conflict_policy', 'skip') || 'skip',
+      propagateDeletes: this.db?.gdriveStateGet?.('propagate_deletes', '0') === '1',
+      autoSyncAfterScan: this.db?.gdriveStateGet?.('auto_sync_after_scan', '1') !== '0',
+      syncTargetChatId: this.getSyncTargetChatId(),
+      syncTargetChatIdNum: this.vault?.chatId ?? null,
+      telegramFloodWaitSec: typeof this._telegramFloodWaitSecRemaining === 'function' ? this._telegramFloodWaitSecRemaining() : 0,
       throttleInfo: {
-        currentConcurrency: this.throttleController.getConcurrency(),
-        isThrottled: this.rateLimiter.isThrottled(),
-        apiStats: this.rateLimiter.getStats(),
-        syncStats: this.throttleController.getStats(),
+        concurrency: this.throttleController?.getConcurrency?.() || 1,
+        throttled: this.rateLimiter?.isThrottled?.() || false,
+        stats: this.rateLimiter?.getStats?.() || null,
+        currentConcurrency: this.throttleController?.getConcurrency?.() || 1,
+        isThrottled: this.rateLimiter?.isThrottled?.() || false,
+        apiStats: this.rateLimiter?.getStats?.() || null,
+        syncStats: this.throttleController?.getStats?.() || null,
       },
+      clientId: this.auth?.clientId || '',
+      clientSecret: this.auth?.clientSecret || '',
+      authUrl: this.auth?.currentAuthUrl || null,
     };
   }
 
-  _startQueueWorker() {
-    if (this._queueWorkerRunning) return;
-    this._queueWorkerRunning = true;
-    this._activeWorkers = 0;
-    this._adjustWorkers();
-  }
-
-  /**
-   * Spawn or reduce workers to match throttleController.getConcurrency().
-   */
-  _adjustWorkers() {
-    const target = this.throttleController.getConcurrency();
-    while (this._activeWorkers < target) {
-      this._activeWorkers += 1;
-      this._runWorkerLoop();
+  purgeIgnoredQueueItems() {
+    if (typeof this.db?.gdriveSyncQueueGetAll !== 'function') return 0;
+    const queued = this.db.gdriveSyncQueueGetAll();
+    let removed = 0;
+    for (const item of queued) {
+      const fileName = item.fileName || (item.drivePath ? String(item.drivePath).split('/').pop() : '');
+      if (typeof this._shouldSyncFile === 'function' && !this._shouldSyncFile(fileName)) {
+        this.db.gdriveSyncQueueRemove(item.driveFileId);
+        removed += 1;
+      }
     }
-  }
-
-  /**
-   * Single worker loop: pick next file, sync with retry, report result.
-   */
-  async _runWorkerLoop() {
-    while (this._queueWorkerRunning) {
-      // Check if this worker should exit (concurrency reduced)
-      if (this._activeWorkers > this.throttleController.getConcurrency()) {
-        this._activeWorkers -= 1;
-        return;
+    if (removed > 0) {
+      console.log(`[GDriveSyncService] Purged ${removed} ignored items from sync queue`);
+      if (typeof this.db?.gdriveSyncQueueCount === 'function') {
+        this.pendingCount = this.db.gdriveSyncQueueCount();
       }
-
-      if (!this.auth.isConnected()) {
-        await new Promise(r => setTimeout(r, 2000));
-        continue;
-      }
-
-      const next = this.db.gdriveSyncQueueGetNext();
-      if (!next) {
-        if (this.status === 'syncing' && !this._syncInProgress) {
-          this.status = 'idle';
-          this.currentSyncFile = null;
-          this.currentSyncProgress = 0;
-          this.pendingCount = 0;
-          this.onChange();
-        }
-        await new Promise(r => setTimeout(r, 1000));
-        continue;
-      }
-
-      this.status = 'syncing';
-      this.currentSyncFile = next.fileName;
-      this.currentSyncProgress = 0;
-      this.pendingCount = this.db.gdriveSyncQueueCount();
-      this.onChange();
-
-      let synced = false;
-      const startAttempt = (next.retryCount || 0) + 1;
-
-      for (let attempt = startAttempt; attempt <= startAttempt + 2; attempt++) {
-        try {
-          await this._syncFile(next);
-          synced = true;
-          break;
-        } catch (e) {
-          const errorType = this._classifyError(e);
-          this.throttleController.reportError(errorType);
-
-          const { retry, delayMs } = this.throttleController.shouldRetry(attempt, errorType);
-          if (!retry) {
-            console.error(`[GDriveSyncService] Permanent fail ${next.drivePath} (${errorType}):`, e.message);
-            break;
-          }
-
-          console.warn(`[GDriveSyncService] Retry ${attempt} for ${next.drivePath} in ${delayMs}ms (${errorType})`);
-          this.db.gdriveSyncQueueIncrementRetry(next.driveFileId);
-          await new Promise(r => setTimeout(r, delayMs));
-
-          // Adjust workers after error (concurrency may have dropped)
-          if (this._activeWorkers > this.throttleController.getConcurrency()) {
-            this._activeWorkers -= 1;
-            return;
-          }
-        }
-      }
-
-      if (synced) {
-        this.db.gdriveSyncQueueRemove(next.driveFileId);
-        this.syncedCount += 1;
-        this.throttleController.reportSuccess();
-        // Maybe spawn more workers after success
-        this._adjustWorkers();
-      } else {
-        // Failed after all retries — already in sync errors via _syncFile catch, remove from queue
-        this.db.gdriveSyncQueueRemove(next.driveFileId);
-      }
-
-      this.pendingCount = this.db.gdriveSyncQueueCount();
-      this.onChange();
+      if (typeof this.onChange === 'function') this.onChange();
     }
+    return removed;
   }
 
+  saveCredentials(clientId, clientSecret) {
+    if (this.auth && typeof this.auth.saveCredentials === 'function') {
+      this.auth.saveCredentials(clientId, clientSecret);
+    }
+    if (typeof this.onChange === 'function') this.onChange();
+    return { ok: true };
+  }
 
-  /**
-   * Connect to Google Drive via OAuth2.
-   * @param {string} clientId
-   * @param {string} clientSecret
-   */
-  async connect(clientId, clientSecret) {
+  async connect(clientId, clientSecret, opts = {}) {
     this.auth.saveCredentials(clientId, clientSecret);
-    const result = await this.auth.authorize();
+    const result = await this.auth.authorize({ force: opts.force !== false });
     if (result.ok) {
       this.status = 'idle';
-      // Initialize changes page token
       const { newStartPageToken } = await this.api.getChanges(null);
       this.db.gdriveStateSet('changes_page_token', newStartPageToken);
-      this._startQueueWorker();
-      this.onChange();
+      if (!this.isPaused && this.isAutoSyncEnabled()) {
+        this._startQueueWorker();
+      }
+      if (typeof this.onChange === 'function') this.onChange();
     }
     return result;
   }
 
-  /** @returns {boolean} */
-  isSyncing() { return this._syncInProgress; }
-
-  /**
-   * Remove a specific file from the active sync queue.
-   * @param {string} driveFileId 
-   */
-  removeQueueItem(driveFileId) {
-    this.db.gdriveSyncQueueRemove(driveFileId);
-    this.pendingCount = this.db.gdriveSyncQueueCount();
-    this.onChange();
-  }
-
-  /**
-   * Disconnect: clear all tokens, subscriptions, and manifest.
-   */
-  disconnect() {
-    this.stopPolling();
-    this.auth.disconnect();
-    for (const sub of this.db.gdriveSubscriptionsAll()) {
-      this.db.gdriveSubscriptionRemove(sub.driveId);
+  cancelConnect() {
+    if (this.auth && typeof this.auth.cancelAuthorization === 'function') {
+      this.auth.cancelAuthorization();
     }
-    this.db.gdriveManifestClear();
-    this.db.gdriveStateSet('changes_page_token', '');
-    this.status = 'disconnected';
-    this.lastError = null;
-    this.onChange();
+    if (typeof this.onChange === 'function') this.onChange();
   }
 
-  /**
-   * Update polling interval.
-   * @param {number} ms - 0 or negative to disable auto polling
-   */
-  setPollInterval(ms) {
-    this._pollIntervalMs = ms;
-    this.db.gdriveStateSet('poll_interval_ms', ms.toString());
-    if (this._pollTimer) {
-      this.stopPolling();
-      if (ms > 0) this.startPolling();
-    }
-  }
-
-  startPolling() {
-    if (this._pollTimer || this._pollIntervalMs <= 0) return;
-    if (!this.auth.isConnected() || this.isPaused) return;
-    
-    // Trigger immediate poll sync on startup/resume
-    void this._runPollSync();
-    
-    this._pollTimer = setInterval(() => void this._runPollSync(), this._pollIntervalMs);
-  }
-
-  stopPolling() {
-    if (this._pollTimer) {
-      clearInterval(this._pollTimer);
-      this._pollTimer = null;
-    }
-  }
-
-  async scanNow() {
-    if (!this.auth.isConnected() || this._syncInProgress || this.isPaused) return;
-    if (!this.auth.isConnected()) {
-      this.status = 'disconnected';
-      this.onChange();
-      return;
+  reconcileExistingVaultFiles() {
+    const vaultEntries = this._vaultEntries();
+    if (!vaultEntries || vaultEntries.length === 0) {
+      return { ok: true, matchedCount: 0, totalChecked: 0 };
     }
 
-    this._syncInProgress = true;
-    this.status = 'syncing';
-    this.lastError = null;
-    this.onChange();
+    const vaultLookup = buildVaultLookupIndex(vaultEntries);
+    const unlinkedNodes = typeof this.db?.gdriveCacheNodesUnlinkedFiles === 'function'
+      ? this.db.gdriveCacheNodesUnlinkedFiles(100000)
+      : [];
 
-    try {
-      const subs = this.db.gdriveSubscriptionsAll().filter(s => s.enabled);
+    if (unlinkedNodes.length === 0) {
+      return { ok: true, matchedCount: 0, totalChecked: 0 };
+    }
 
-      this.scanPhase = 'scanning';
-      this.scanInfo = { currentFolder: '/', filesFound: 0 };
-      this.totalCount = 0;
-      this.syncedCount = 0;
-      this.currentSyncFile = null;
-      this.currentSyncProgress = 0;
-      this.onChange();
+    const subs = typeof this.db?.gdriveSubscriptionsAll === 'function'
+      ? this.db.gdriveSubscriptionsAll().filter((s) => s.enabled)
+      : [];
 
-      // --- Scanner (producer): discovers files and pushes to db queue ---
+    let matchedCount = 0;
+    for (const node of unlinkedNodes) {
+      let targetVaultPath = null;
+      let relativePath = null;
+
       for (const sub of subs) {
         if (sub.isFolder) {
-          await this.api.listFolderRecursive(sub.driveId, '', new Set(), {
-            onProgress: (info) => {
-              this.scanInfo = { currentFolder: `${sub.drivePath}/${info.currentFolder}`, filesFound: info.filesFound };
-              this.onChange();
-            },
-            onFile: (f) => {
-              if (!this._shouldSyncFile(f.name)) return;
-              const manifest = this.db.gdriveManifestGet(f.id);
-              if (manifest && manifest.driveModifiedTime === f.modifiedTime) return;
-              this.db.gdriveSyncQueueAdd({
-                driveFileId: f.id,
-                fileName: f.name,
-                drivePath: f.drivePath,
-                vaultPath: `${sub.vaultPath}${f.drivePath}`,
-                size: f.size,
-                modifiedTime: f.modifiedTime,
-              });
-              this.totalCount += 1;
-              this.pendingCount = this.db.gdriveSyncQueueCount();
-              this.onChange();
-            },
-          });
-        } else {
-          // Single file subscription
-          try {
-            const file = await this.api.getFile(sub.driveId);
-            if (!file || file.trashed) continue;
-            if (!this._shouldSyncFile(file.name)) continue;
-            const manifest = this.db.gdriveManifestGet(sub.driveId);
-            if (manifest && manifest.driveModifiedTime === file.modifiedTime) continue;
-            this.db.gdriveSyncQueueAdd({
-              driveFileId: file.id,
-              fileName: file.name,
-              drivePath: sub.drivePath,
-              vaultPath: sub.vaultPath,
-              size: Number(file.size) || 0,
-              modifiedTime: file.modifiedTime,
-            });
-            this.totalCount += 1;
-            this.pendingCount = this.db.gdriveSyncQueueCount();
-            this.onChange();
-          } catch (e) {
-            console.warn(`[GDriveSyncService] Failed to get file ${sub.driveId}:`, e.message);
-          }
-        }
-      }
-
-      // Signal scan complete
-      this.scanPhase = null;
-      this.scanInfo = null;
-      this.onChange();
-
-      try {
-        const token = this.db.gdriveStateGet('changes_page_token');
-        if (!token) {
-          const { newStartPageToken } = await this.api.getChanges(null);
-          this.db.gdriveStateSet('changes_page_token', newStartPageToken);
-        }
-      } catch (tokenErr) {
-        console.warn('[GDriveSyncService] Failed to set changes token post-scan:', tokenErr.message);
-      }
-
-      this.lastSyncAt = new Date().toISOString();
-      if (this.db.gdriveSyncQueueCount() === 0) {
-        this.status = 'idle';
-      } else {
-        this.status = 'syncing';
-      }
-    } catch (e) {
-      this.status = 'error';
-      this.lastError = String(e.message || e);
-      console.error('[GDriveSyncService] scan error:', e);
-    } finally {
-      this.currentSyncFile = null;
-      this.currentSyncProgress = 0;
-      this.scanPhase = null;
-      this.scanInfo = null;
-      this._syncInProgress = false;
-      this.onChange();
-    }
-  }
-
-  /**
-   * Poll-based sync using Google Drive Changes API.
-   */
-  async _runPollSync() {
-    if (this._syncInProgress) return;
-    if (!this.auth.isConnected()) return;
-
-    this._syncInProgress = true;
-    this.status = 'syncing';
-    this.lastError = null;
-    this.onChange();
-
-    try {
-      let pageToken = this.db.gdriveStateGet('changes_page_token');
-      if (!pageToken) {
-        const { newStartPageToken } = await this.api.getChanges(null);
-        this.db.gdriveStateSet('changes_page_token', newStartPageToken);
-        this._syncInProgress = false;
-        this.status = 'idle';
-        this.onChange();
-        return;
-      }
-
-      const { changes, newStartPageToken } = await this.api.getChanges(pageToken);
-      this.db.gdriveStateSet('changes_page_token', newStartPageToken);
-
-      // Filter changes to subscribed files/folders
-      const subs = this.db.gdriveSubscriptionsAll().filter(s => s.enabled);
-      const filesToSync = [];
-
-      for (const change of changes) {
-        if (change.removed || !change.file) continue;
-        if (change.file.trashed) continue;
-        if (change.file.mimeType === 'application/vnd.google-apps.folder') continue;
-        if (change.file.mimeType?.startsWith('application/vnd.google-apps.')) continue;
-        if (!this._shouldSyncFile(change.file.name)) continue;
-
-        for (const sub of subs) {
-          if (sub.isFolder) {
-            // Check if file was previously synced under this subscription
-            const manifest = this.db.gdriveManifestGet(change.fileId);
-            if (manifest && manifest.vaultPath.startsWith(sub.vaultPath)) {
-              if (manifest.driveModifiedTime !== change.file.modifiedTime) {
-                filesToSync.push({
-                  driveFileId: change.fileId,
-                  fileName: change.file.name,
-                  drivePath: manifest.drivePath,
-                  vaultPath: manifest.vaultPath,
-                  size: Number(change.file.size) || 0,
-                  modifiedTime: change.file.modifiedTime,
-                  md5Checksum: change.file.md5Checksum || null,
-                });
-              }
-              break;
-            }
-          } else if (sub.driveId === change.fileId) {
-            const manifest = this.db.gdriveManifestGet(change.fileId);
-            if (!manifest || manifest.driveModifiedTime !== change.file.modifiedTime) {
-              filesToSync.push({
-                driveFileId: change.fileId,
-                fileName: change.file.name,
-                drivePath: sub.drivePath,
-                vaultPath: sub.vaultPath,
-                size: Number(change.file.size) || 0,
-                modifiedTime: change.file.modifiedTime,
-                md5Checksum: change.file.md5Checksum || null,
-              });
-            }
+          const subDrivePath = sub.drivePath.endsWith('/') ? sub.drivePath : `${sub.drivePath}/`;
+          if (node.drivePath && node.drivePath.startsWith(subDrivePath)) {
+            relativePath = node.drivePath.slice(subDrivePath.length);
+            targetVaultPath = `${sub.vaultPath}${relativePath}`.replace(/\/+/g, '/');
             break;
           }
+        } else if (sub.driveId === node.id) {
+          relativePath = node.name;
+          targetVaultPath = sub.vaultPath;
+          break;
         }
       }
 
-      this.pendingCount = this.db.gdriveSyncQueueCount();
-      this.totalCount += filesToSync.length;
-      this.onChange();
-
-      for (const f of filesToSync) {
-        this.db.gdriveSyncQueueAdd({
-          driveFileId: f.driveFileId,
-          fileName: f.fileName,
-          drivePath: f.drivePath,
-          vaultPath: f.vaultPath,
-          size: f.size,
-          modifiedTime: f.modifiedTime,
-        });
-      }
-      this.pendingCount = this.db.gdriveSyncQueueCount();
-      this.onChange();
-
-      this.lastSyncAt = new Date().toISOString();
-      if (this.pendingCount === 0) {
-        this.status = 'idle';
-      } else {
-        this.status = 'syncing';
-      }
-    } catch (e) {
-      this.status = 'error';
-      this.lastError = String(e.message || e);
-      console.error('[GDriveSyncService] poll error:', e);
-    } finally {
-      this._syncInProgress = false;
-      this.onChange();
-    }
-  }
-
-  _notifyProgress() {
-    const now = Date.now();
-    if (now - this._lastProgressNotifyAt >= 200) {
-      this._lastProgressNotifyAt = now;
-      this.onChange();
-    }
-  }
-
-  /**
-   * Download from Drive and upload to Telegram vault.
-   */
-  async _syncFile({ driveFileId, fileName, drivePath, vaultPath, size, modifiedTime }) {
-    try {
-      this.currentSyncProgress = 0;
-      this.onChange();
-
-      // Download to temp
-      const customTempDir = this.db.gdriveStateGet('temp_download_dir', '');
-      const tempPath = await this.api.downloadFile(driveFileId, fileName, customTempDir, (progress) => {
-        this.currentSyncProgress = progress * 0.5;
-        this._notifyProgress();
+      const match = vaultLookup.findMatch({
+        targetPath: targetVaultPath,
+        drivePath: node.drivePath,
+        fileName: node.name,
+        size: node.size,
       });
 
-      try {
-        // Compute SHA256
-        const sha256 = this._sha256Of(tempPath);
-
-        // Dedup check: if same SHA256 + size already on vault at same path, skip
-        const existingEntries = this.db.getAll().filter(e => e.path === vaultPath);
-        if (existingEntries.length > 0) {
-          const existing = existingEntries[0];
-          if (existing.sha256 === sha256 && existing.size === size) {
-            // Already on vault, just update manifest
-            this.db.gdriveManifestUpsert({
-              driveFileId, drivePath, vaultPath, sha256, size,
-              driveModifiedTime: modifiedTime,
-            });
-            this.db.gdriveSyncErrorRemove(driveFileId);
-            return;
-          }
-        }
-
-        // Upload to Telegram vault
-        const { task, done } = this.vault.enqueueUpload(tempPath, vaultPath, { metadata: { source: 'gdrive' } });
-        const unsub = task.onProgress((progress) => {
-          this.currentSyncProgress = 0.5 + (progress * 0.5);
-          this._notifyProgress();
-        });
-        await done;
-        unsub();
-
-        // Update manifest
+      if (match) {
         this.db.gdriveManifestUpsert({
-          driveFileId, drivePath, vaultPath, sha256, size,
-          driveModifiedTime: modifiedTime,
+          driveFileId: node.id,
+          drivePath: relativePath || node.drivePath || node.name,
+          vaultPath: match.path,
+          md5: node.md5Checksum || null,
+          sha256: match.sha256,
+          size: Number(node.size),
+          driveModifiedTime: node.modifiedTime || new Date().toISOString(),
         });
-        this.db.gdriveSyncErrorRemove(driveFileId);
-      } finally {
-        // Clean up temp file
-        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); }
-        catch (e) { console.warn('[GDriveSyncService] temp cleanup failed:', e); }
-      }
-    } catch (e) {
-      this.db.gdriveSyncErrorAdd({
-        driveFileId, fileName, drivePath, vaultPath, size,
-        modifiedTime, errorMessage: String(e.message || e),
-      });
-      throw e;
-    }
-  }
-
-  _sha256Of(filePath) {
-    const hash = crypto.createHash('sha256');
-    hash.update(fs.readFileSync(filePath));
-    return hash.digest('hex');
-  }
-
-  _shouldSyncFile(fileName) {
-    const ext = path.extname(fileName).toLowerCase().slice(1);
-    if (!ext) return true;
-
-    const ignoredStr = this.db.gdriveStateGet('ignored_extensions', '');
-    if (ignoredStr) {
-      const ignoredList = ignoredStr.split(',').map(s => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean);
-      if (ignoredList.includes(ext)) return false;
-    }
-
-    const allowedStr = this.db.gdriveStateGet('allowed_extensions', '');
-    if (allowedStr) {
-      const allowedList = allowedStr.split(',').map(s => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean);
-      if (allowedList.length > 0 && !allowedList.includes(ext)) return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Classify an error for retry decisions.
-   * @param {Error} err
-   * @returns {'throttle'|'timeout'|'network'|'permanent'}
-   */
-  _classifyError(err) {
-    const msg = String(err.message || err).toLowerCase();
-
-    // Throttle errors
-    if (msg.includes('429') || msg.includes('rate limit') || msg.includes('flood')) {
-      return 'throttle';
-    }
-
-    // Timeout errors
-    if (msg.includes('timeout') || msg.includes('timed out')) {
-      return 'timeout';
-    }
-
-    // Network errors
-    if (
-      msg.includes('econnreset') || msg.includes('enotfound') ||
-      msg.includes('socket hang up') || msg.includes('econnrefused') ||
-      msg.includes('network') || msg.includes('fetch failed')
-    ) {
-      return 'network';
-    }
-
-    // Permanent errors (404, 403 non-rate-limit, trashed)
-    if (msg.includes('404') || msg.includes('not found') || msg.includes('trashed')) {
-      return 'permanent';
-    }
-    if (msg.includes('403') && !msg.includes('rate')) {
-      return 'permanent';
-    }
-
-    // Default to network (retriable)
-    return 'network';
-  }
-
-  // --- Subscription management ---
-
-  addSubscription({ driveId, drivePath, vaultPath, isFolder }) {
-    this.db.gdriveSubscriptionAdd({ driveId, drivePath, vaultPath, isFolder });
-    this.onChange();
-  }
-
-  removeSubscription(driveId) {
-    // Clean manifest entries for this subscription
-    const sub = this.db.gdriveSubscriptionsAll().find(s => s.driveId === driveId);
-    if (sub) {
-      for (const m of this.db.gdriveManifestAll()) {
-        if (m.vaultPath.startsWith(sub.vaultPath)) {
-          this.db.gdriveManifestDelete(m.driveFileId);
-        }
+        this.db.gdriveSyncQueueRemove(node.id);
+        this.db.gdriveSyncErrorRemove(node.id);
+        matchedCount += 1;
       }
     }
-    this.db.gdriveSubscriptionRemove(driveId);
-    this.onChange();
+
+    if (matchedCount > 0) {
+      this.syncedCount = (this.syncedCount || 0) + matchedCount;
+      this.pendingCount = Math.max(0, (this.pendingCount || 0) - matchedCount);
+      if (typeof this.onChange === 'function') this.onChange();
+    }
+
+    return { ok: true, matchedCount, totalChecked: unlinkedNodes.length };
   }
 
-  toggleSubscription(driveId, enabled) {
-    this.db.gdriveSubscriptionSetEnabled(driveId, enabled);
-    this.onChange();
+  isSyncing() {
+    return this._syncInProgress;
   }
 
-  /**
-   * List folder contents for file picker UI.
-   */
-  async listDriveFolder(folderId = 'root') {
-    return this.api.listFolder(folderId);
-  }
-
-  /**
-   * Manual retry for a failed sync file.
-   */
-  async retryFile(driveFileId) {
-    const errors = this.db.gdriveSyncErrorsAll();
-    const target = errors.find(err => err.driveFileId === driveFileId);
-    if (!target) return { ok: false, error: 'File not found in sync errors' };
-
-    this._syncInProgress = true;
-    this.status = 'syncing';
-    this.lastError = null;
-    this.onChange();
+  async checkConnection() {
+    const start = Date.now();
+    if (!this.auth?.clientId || !this.auth?.clientSecret) {
+      return { ok: false, error: 'Chưa cấu hình Client ID và Client Secret' };
+    }
+    if (!this.auth?.refreshToken) {
+      return { ok: false, error: 'Chưa đăng nhập Google Drive (thiếu Refresh Token)' };
+    }
 
     try {
-      await this._syncFile({
-        driveFileId: target.driveFileId,
-        fileName: target.fileName,
-        drivePath: target.drivePath,
-        vaultPath: target.vaultPath,
-        size: target.size,
-        modifiedTime: target.modifiedTime,
-      });
-      this.status = 'idle';
-      this.onChange();
-      return { ok: true };
+      const about = await this.api.getAbout();
+      const latencyMs = Date.now() - start;
+      const email = about?.user?.emailAddress || this.auth.email || '';
+      const displayName = about?.user?.displayName || '';
+      if (email && typeof this.db?.gdriveTokenSet === 'function') {
+        this.db.gdriveTokenSet('email', email);
+      }
+      this.lastError = null;
+      if (this.status === 'error') {
+        this.status = 'idle';
+      }
+      if (typeof this.onChange === 'function') this.onChange();
+      return {
+        ok: true,
+        email,
+        displayName,
+        storageQuota: about?.storageQuota || null,
+        latencyMs,
+      };
     } catch (e) {
+      const rawMsg = String(e.message || e);
+      let error = rawMsg;
+      if (isAuthError(e)) {
+        error = FRIENDLY_AUTH_ERROR_MSG;
+      }
       this.status = 'error';
-      this.lastError = String(e.message || e);
-      this.onChange();
-      return { ok: false, error: String(e.message || e) };
-    } finally {
-      this._syncInProgress = false;
-      this.onChange();
+      this.lastError = error;
+      if (this.scanPhase) {
+        this.scanPhase = null;
+        this.scanInfo = null;
+        this._syncInProgress = false;
+      }
+      if (typeof this._stopActiveWorkersAndClaims === 'function') {
+        this._stopActiveWorkersAndClaims();
+      }
+      if (typeof this.onChange === 'function') this.onChange();
+      return { ok: false, error, rawError: rawMsg };
     }
+  }
+
+  disconnect({ keepCredentials = true } = {}) {
+    this._lifecycleGeneration = (this._lifecycleGeneration || 0) + 1;
+    this.stopPolling();
+    this._queueWorkerRunning = false;
+    this._activeWorkers = 0;
+    if (this._workerControllers) {
+      for (const active_controller of this._workerControllers.values()) {
+        active_controller.abort();
+      }
+      this._workerControllers.clear();
+    }
+    this._retryController?.abort();
+    this.auth?.disconnect?.({ keepCredentials });
+    if (typeof this.db?.gdriveSubscriptionsAll === 'function') {
+      for (const sub of this.db.gdriveSubscriptionsAll()) {
+        this.db.gdriveSubscriptionRemove(sub.driveId);
+      }
+    }
+    this.db?.gdriveManifestClear?.();
+    this.db?.gdriveSyncQueueClear?.();
+    this.db?.gdriveSyncErrorsClear?.();
+    this.db?.gdriveStateSet?.('changes_page_token', '');
+    this.pendingCount = 0;
+    this.currentSyncFile = null;
+    this.currentSyncProgress = 0;
+    this._syncInProgress = false;
+    this.status = 'disconnected';
+    this.lastError = null;
+    if (typeof this.onChange === 'function') this.onChange();
   }
 }
+
+// Assign modular methods to GDriveSyncService prototype
+Object.assign(
+  GDriveSyncService.prototype,
+  downloaderMethods,
+  uploaderMethods,
+  queueWorkerMethods,
+  scannerMethods,
+);
 
 module.exports = { GDriveSyncService };

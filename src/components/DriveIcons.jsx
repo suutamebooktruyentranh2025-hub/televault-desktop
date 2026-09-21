@@ -11,6 +11,19 @@ export function IconFolder({ className = 'h-5 w-5' }) {
   );
 }
 
+export function IconGoogleDrive({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 87.3 78" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
+      <path d="M43.65 25 29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44A8.9 8.9 0 0 0 0 53h27.5z" fill="#00AC47"/>
+      <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 10.15 7.9 13.65z" fill="#EA4335"/>
+      <path d="M43.65 25 57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/>
+      <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/>
+      <path d="M73.4 26.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 57.4 48.8h27.5c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
+    </svg>
+  );
+}
+
 /** Gray folder icon used in Drive grid view */
 export function IconFolderGrid({ className = 'h-6 w-6' }) {
   return (
@@ -230,9 +243,10 @@ export function IconRename({ className = 'h-5 w-5' }) {
 }
 
 export function IconRestore({ className = 'h-5 w-5' }) {
+  // Material "undo" — curved back arrow
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+      <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
     </svg>
   );
 }
@@ -336,6 +350,15 @@ export function IconTransfer({ className = 'h-5 w-5' }) {
       <path d="M3 12h18" />
       <path d="M17 8l4 4-4 4" />
       <path d="M21 12H3" />
+    </svg>
+  );
+}
+
+export function IconDuplicate({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
   );
 }

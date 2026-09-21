@@ -4,10 +4,13 @@ import { SettingsSelect } from '../components/SettingsSelect';
 import { InitialSyncDialog } from '../components/InitialSyncDialog';
 import { useI18n } from '../context/I18nContext';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
+import { useToast } from '../context/ToastContext';
 import { AdminContactLinks } from '../components/AdminContactLinks';
 
 const settingsApi = window.televault?.settings;
 const sessionApi = window.televault?.session;
+const backupApi = window.televault?.backup;
 
 function SettingsToggle({ checked, onChange, label }) {
   return (
@@ -48,10 +51,14 @@ function SettingsField({ title, hint, children }) {
 export function SettingsScreen() {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { confirm } = useDialog();
+  const { showToast } = useToast();
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [cacheGb, setCacheGb] = useState(2);
   const [autoResume, setAutoResume] = useState(true);
   const [saveAsDir, setSaveAsDir] = useState('');
+  const [include_sessions, setIncludeSessions] = useState(false);
+  const [backup_busy, setBackupBusy] = useState(false);
 
   const [syncFolder, setSyncFolder] = useState('');
   const [syncMode, setSyncMode] = useState('upload-only');
@@ -67,8 +74,6 @@ export function SettingsScreen() {
       setCacheGb(result.cacheLimitGb || 2);
       setAutoResume(result.autoResumeTransfers !== false);
       setSaveAsDir(result.saveAsDirectory || '');
-      if (result.theme) setTheme(result.theme === 'dark' ? 'dark' : 'light');
-      if (result.locale) setLocale(result.locale);
     }
     const syncConfig = await window.televault?.sync?.getConfig();
     if (syncConfig?.ok) {
@@ -77,7 +82,7 @@ export function SettingsScreen() {
       setSyncEnabled(syncConfig.syncEnabled || false);
       setSyncVaultFolder(syncConfig.syncVaultFolder || '/Sync/');
     }
-  }, [setLocale, setTheme]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -132,6 +137,42 @@ export function SettingsScreen() {
 
   async function saveSyncConfig(partial) {
     await window.televault?.sync?.setConfig(partial);
+  }
+
+  async function handleExportBackup() {
+    if (backup_busy) return;
+    setBackupBusy(true);
+    try {
+      const result = await backupApi?.export(include_sessions);
+      if (result?.cancelled) return;
+      if (!result?.ok) {
+        showToast(t('settingsBackupError', { error: result?.error || t('errorGeneric') }), {
+          variant: 'error',
+        });
+        return;
+      }
+      showToast(t('settingsBackupExportDone', { path: result.path }));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function handleImportBackup() {
+    if (backup_busy) return;
+    if (!(await confirm(t('settingsBackupImportConfirm')))) return;
+    setBackupBusy(true);
+    try {
+      const result = await backupApi?.import();
+      if (result?.cancelled) return;
+      if (!result?.ok) {
+        showToast(t('settingsBackupError', { error: result?.error || t('errorGeneric') }), {
+          variant: 'error',
+        });
+      }
+      // Successful import relaunches the app.
+    } finally {
+      setBackupBusy(false);
+    }
   }
 
   return (
@@ -239,6 +280,49 @@ export function SettingsScreen() {
           </SettingsField>
         </div>
       </section>
+      <section className="gd-settings-group">
+        <h2 className="gd-settings-group-title">{t('settingsSectionBackup')}</h2>
+        <div className="gd-settings-card">
+          <SettingsField title={t('settingsSectionBackup')} hint={t('settingsBackupHint')}>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-start gap-2 text-sm text-[var(--gd-text)]">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={include_sessions}
+                  onChange={(e) => setIncludeSessions(e.target.checked)}
+                  disabled={backup_busy}
+                />
+                <span>
+                  <span className="font-medium">{t('settingsBackupIncludeSessions')}</span>
+                  <span className="mt-1 block text-xs text-[var(--gd-text-secondary)]">
+                    {t('settingsBackupIncludeSessionsHint')}
+                  </span>
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--gd-border)] px-3 py-2 text-sm font-medium text-[var(--gd-text)] hover:bg-[var(--gd-hover)] disabled:opacity-50"
+                  onClick={() => void handleExportBackup()}
+                  disabled={backup_busy}
+                >
+                  {t('settingsBackupExport')}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--gd-danger)] px-3 py-2 text-sm font-medium text-[var(--gd-danger)] hover:bg-[var(--gd-hover)] disabled:opacity-50"
+                  onClick={() => void handleImportBackup()}
+                  disabled={backup_busy}
+                >
+                  {t('settingsBackupImport')}
+                </button>
+              </div>
+            </div>
+          </SettingsField>
+        </div>
+      </section>
+
       <section className="gd-settings-group">
         <h2 className="gd-settings-group-title">{t('settingsSectionSync')}</h2>
         <div className="gd-settings-card">

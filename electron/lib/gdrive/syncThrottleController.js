@@ -59,7 +59,7 @@ class SyncThrottleController {
    */
   reportError(type) {
     this._successStreak = 0;
-    if (type === 'throttle' || type === 'timeout') {
+    if (type === 'throttle' || type === 'timeout' || type === 'auth') {
       this._throttleCount += 1;
       this._concurrency = this._min;
       this._lastScaleDownAt = Date.now();
@@ -70,11 +70,11 @@ class SyncThrottleController {
   /**
    * Determine whether a failed file should be retried.
    * @param {number} attempt - Current attempt number (1-based)
-   * @param {'throttle'|'timeout'|'network'|'permanent'} errorType
+   * @param {'throttle'|'timeout'|'network'|'permanent'|'auth'} errorType
    * @returns {{ retry: boolean, delayMs: number }}
    */
   shouldRetry(attempt, errorType) {
-    if (errorType === 'permanent') {
+    if (errorType === 'permanent' || errorType === 'auth') {
       return { retry: false, delayMs: 0 };
     }
     if (attempt > this._maxRetries) {

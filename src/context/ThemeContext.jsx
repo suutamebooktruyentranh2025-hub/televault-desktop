@@ -28,6 +28,7 @@ export function ThemeProvider({ children }) {
     const value = next === 'dark' ? 'dark' : 'light';
     setThemeState(value);
     applyTheme(value);
+    void settingsApi?.set?.({ theme: value });
   }, []);
 
   const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);

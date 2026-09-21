@@ -40,7 +40,20 @@ export function DashboardRankList({ title, columns, rows, emptyLabel }) {
                       key={columns[i]?.key || i}
                       className={columns[i]?.align === 'right' ? 'text-right' : ''}
                     >
-                      {cell}
+                      {typeof cell === 'object' && cell !== null && 'title' in cell ? (
+                        <div className="gd-dashboard-cell-with-subtext">
+                          <span className="gd-dashboard-cell-title truncate" title={cell.title}>
+                            {cell.title}
+                          </span>
+                          {cell.subtext ? (
+                            <span className="gd-dashboard-cell-subtext truncate" title={cell.subtext}>
+                              {cell.subtext}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        cell
+                      )}
                     </td>
                   ))}
                 </tr>

@@ -11,6 +11,7 @@ const defaultState = {
   authDetail: {},
   scannedCount: 0,
   entryCount: 0,
+  floodWaitSec: 0,
 };
 
 export function useSession() {
@@ -137,6 +138,11 @@ export function useSession() {
     await api.factoryReset();
   }, [applyState]);
 
+  const checkAccountStatus = useCallback(async () => {
+    if (!api?.checkAccountStatus) return null;
+    return api.checkAccountStatus();
+  }, []);
+
   return {
     state,
     saveTelegramApi,
@@ -151,5 +157,6 @@ export function useSession() {
     addAccount,
     resetTelegramApi,
     factoryReset,
+    checkAccountStatus,
   };
 }

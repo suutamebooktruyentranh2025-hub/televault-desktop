@@ -51,16 +51,51 @@ describe('buildDashboardStats', () => {
       f(1, '/a.txt', 100, '2026-07-03T12:00:00Z'),
       f(2, '/b.txt', 200, '2026-07-04T12:00:00Z'),
     ];
-    const stats = buildDashboardStats(entries, {
+    const statsWithFiles = buildDashboardStats(entries, {
+      rangeDays: 3,
+      today: new Date('2026-07-04T12:00:00Z'),
+      timeZone: 'UTC',
+      includeDayFiles: true,
+    });
+    assert.equal(statsWithFiles.uploadsPerDay.length, 3);
+    const lastWithFiles = statsWithFiles.uploadsPerDay.at(-1);
+    assert.equal(lastWithFiles.date, '2026-07-04');
+    assert.equal(lastWithFiles.fileCount, 1);
+    assert.equal(lastWithFiles.bytes, 200);
+    assert.equal(statsWithFiles.uploadsPerDay[0].fileCount, 0);
+    assert.equal(lastWithFiles.files.length, 1);
+    assert.equal(lastWithFiles.files[0].messageId, 2);
+    assert.equal(lastWithFiles.files[0].name, 'b.txt');
+
+    const statsLight = buildDashboardStats(entries, {
       rangeDays: 3,
       today: new Date('2026-07-04T12:00:00Z'),
       timeZone: 'UTC',
     });
-    assert.equal(stats.uploadsPerDay.length, 3);
-    const last = stats.uploadsPerDay.at(-1);
-    assert.equal(last.date, '2026-07-04');
-    assert.equal(last.fileCount, 1);
-    assert.equal(last.bytes, 200);
-    assert.equal(stats.uploadsPerDay[0].fileCount, 0);
+    assert.equal(statsLight.uploadsPerDay.at(-1).files, undefined);
+  });
+
+  it('aggregates story folders rolling up from format subfolders', () => {
+    const entries = [
+      f(1, '/Manga/Naruto/Naruto (CBZ)/Chap 01.cbz', 100, '2026-07-01T10:00:00Z'),
+      f(2, '/Manga/Naruto/Naruto (MOBI)/Vol 01.mobi', 200, '2026-07-01T11:00:00Z'),
+      f(3, '/Manga/One Piece/One Piece (CBZ)/Chap 01.cbz', 150, '2026-07-01T12:00:00Z'),
+      f(4, '/Comics/Batman/Batman Issue 01.cbr', 80, '2026-07-01T13:00:00Z'),
+    ];
+    const stats = buildDashboardStats(entries, { rangeDays: 7, today: new Date('2026-07-04T12:00:00Z') });
+    // Naruto total = 300, One Piece total = 150, Batman total = 80
+    assert.equal(stats.topFolders[0].name, 'Naruto');
+    assert.equal(stats.topFolders[0].path, '/Manga/Naruto/');
+    assert.equal(stats.topFolders[0].subtext, 'Manga');
+    assert.equal(stats.topFolders[0].bytes, 300);
+    assert.equal(stats.topFolders[0].fileCount, 2);
+
+    assert.equal(stats.topFolders[1].name, 'One Piece');
+    assert.equal(stats.topFolders[1].path, '/Manga/One Piece/');
+    assert.equal(stats.topFolders[1].bytes, 150);
+
+    assert.equal(stats.topFolders[2].name, 'Batman');
+    assert.equal(stats.topFolders[2].path, '/Comics/Batman/');
+    assert.equal(stats.topFolders[2].bytes, 80);
   });
 });

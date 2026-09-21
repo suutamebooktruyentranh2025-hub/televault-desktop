@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { sanitizeFolderPath } from '../utils/pathUtils';
 
 const api = window.televault?.sharedVault;
+
+const sharedListingCache = new Map();
 
 export function useSharedVaults() {
   const [vaults, setVaults] = useState([]);
@@ -9,7 +12,10 @@ export function useSharedVaults() {
     if (activeVaultId) localStorage.setItem('televault_shared_vault_id', activeVaultId);
     else localStorage.removeItem('televault_shared_vault_id');
   }, [activeVaultId]);
-  const [currentFolder, setCurrentFolder] = useState(() => localStorage.getItem('televault_shared_current_folder') || '/');
+  const [currentFolder, setCurrentFolder] = useState(() => {
+    const saved = localStorage.getItem('televault_shared_current_folder') || '/';
+    return sanitizeFolderPath(saved);
+  });
   useEffect(() => {
     localStorage.setItem('televault_shared_current_folder', currentFolder);
   }, [currentFolder]);
@@ -17,6 +23,7 @@ export function useSharedVaults() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [currentFolderCounts, setCurrentFolderCounts] = useState(null);
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
 
@@ -32,6 +39,7 @@ export function useSharedVaults() {
     void load();
 
     const unsub = api.onChanged(() => {
+      sharedListingCache.clear();
       void load();
     });
 
@@ -47,9 +55,17 @@ export function useSharedVaults() {
     let cancelled = false;
 
     async function loadListing() {
-      setLoading(true);
+      const cacheKey = `${activeVaultId}:${currentFolder}:${sortField}:${sortDirection}`;
+      const cached = sharedListingCache.get(cacheKey);
+      if (cached) {
+        setFolders(cached.folders);
+        setFiles(cached.files);
+        setCurrentFolderCounts(cached.counts);
+      } else {
+        setLoading(true);
+      }
+
       try {
-        // Scan on first access (backend tracks scanned state)
         setScanning(true);
         await api.scan(activeVaultId);
         if (cancelled) return;
@@ -57,8 +73,14 @@ export function useSharedVaults() {
 
         const result = await api.getListing(activeVaultId, currentFolder, sortField, sortDirection);
         if (!cancelled && result?.ok) {
+          sharedListingCache.set(cacheKey, {
+            folders: result.folders,
+            files: result.files,
+            counts: result.counts || null,
+          });
           setFolders(result.folders);
           setFiles(result.files);
+          setCurrentFolderCounts(result.counts || null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -68,14 +90,31 @@ export function useSharedVaults() {
   }, [activeVaultId, currentFolder, sortField, sortDirection]);
 
   const goTo = useCallback((folder) => {
-    setCurrentFolder(folder);
-  }, []);
+    const nextFolder = sanitizeFolderPath(folder);
+    if (nextFolder === currentFolder) return;
+
+    const cacheKey = `${activeVaultId}:${nextFolder}:${sortField}:${sortDirection}`;
+    const cached = sharedListingCache.get(cacheKey);
+    if (cached) {
+      setFolders(cached.folders);
+      setFiles(cached.files);
+      setCurrentFolderCounts(cached.counts);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setFolders([]);
+      setFiles([]);
+      setCurrentFolderCounts(null);
+    }
+    setCurrentFolder(nextFolder);
+  }, [activeVaultId, currentFolder, sortField, sortDirection]);
 
   const openVault = useCallback((chatId) => {
     setActiveVaultId(chatId);
     setCurrentFolder('/');
     setFolders([]);
     setFiles([]);
+    setCurrentFolderCounts(null);
   }, []);
 
   const toggleSort = useCallback((field) => {
@@ -110,9 +149,9 @@ export function useSharedVaults() {
     currentFolder,
     folders,
     files,
+    currentFolderCounts,
     loading,
     scanning,
-    currentFolder,
     sortField,
     sortDirection,
     breadcrumbs,

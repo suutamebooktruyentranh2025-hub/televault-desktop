@@ -4,7 +4,7 @@ import { IconDriveLogo } from '../components/DriveIcons';
 export function TelegramBootScreen() {
   const { t } = useI18n();
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[var(--gd-bg)]">
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--gd-bg)]">
       <IconDriveLogo className="h-12 w-12" />
       <p className="text-sm text-[var(--gd-text-secondary)]">{t('telegramBooting')}</p>
     </div>

@@ -117,4 +117,31 @@ describe('vaultTree', () => {
     assert.equal(folderMtime(data, '/docs/').toISOString(), new Date(Date.UTC(2026, 6, 15)).toISOString());
     assert.equal(folderSize(data, '/docs/'), 2);
   });
+
+  it('merges NFD and NFC folder paths into a single folder', () => {
+    const nfcFolder = 'Anh N\u00f4ng D\u00e2n C\u1ea7n Ki\u1ec7m';
+    const nfdFolder = nfcFolder.normalize('NFD');
+    const data = [
+      createVaultEntry({
+        messageId: 1,
+        path: `/${nfdFolder}/T01.cbz`,
+        size: 100,
+        sha256: 'h1',
+        mtime: new Date(),
+      }),
+      createVaultEntry({
+        messageId: 2,
+        path: `/${nfcFolder}/T02.cbz`,
+        size: 200,
+        sha256: 'h2',
+        mtime: new Date(),
+      }),
+    ];
+    const listing = listFolder(data, '/');
+    assert.equal(listing.folders.length, 1);
+    assert.equal(listing.folders[0], nfcFolder);
+
+    const subListing = listFolder(data, `/${nfcFolder}/`);
+    assert.equal(subListing.files.length, 2);
+  });
 });

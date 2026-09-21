@@ -2,11 +2,13 @@ const path = require('path');
 const fs = require('fs');
 const { ChannelService } = require('../telegram/channelService');
 const { openIndexDb } = require('../db/indexDb');
+const { VaultService } = require('./vaultService');
 const {
   listFolder,
   sortFolderListing,
   folderMtime,
   folderSize,
+  folderCounts,
   entryName,
   isDir,
   effectiveTagsForPath,
@@ -23,22 +25,83 @@ class SharedVaultManager {
     this.onChange = opts.onChange;
     /** @type {Array<{ chatId: number, title: string }>} */
     this._vaults = [];
-    /** @type {Map<number, { db: ReturnType<typeof openIndexDb>, channel: ChannelService, scanned: boolean }>} */
+    /** @type {Map<number, { db: ReturnType<typeof openIndexDb>, channel: ChannelService, scanned: boolean, vaultService?: import('./vaultService').VaultService }>} */
     this._instances = new Map();
   }
 
   async discover() {
-    const found = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
-    this._vaults = found;
+    const from_network = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
+    const by_id = new Map(from_network.map((vault_item) => [vault_item.chatId, vault_item]));
+
+    const candidate_ids = new Set([
+      ...from_network.map((vault_item) => vault_item.chatId),
+      ...this._vaults.map((vault_item) => vault_item.chatId),
+      ...this._listKnownSharedChatIds(),
+    ]);
+    candidate_ids.delete(this.ownChatId);
+
+    for (const chat_id of candidate_ids) {
+      if (by_id.has(chat_id)) continue;
+      const verified = await this._verifySharedVaultChat(chat_id);
+      if (verified) by_id.set(chat_id, verified);
+    }
+
+    this._vaults = [...by_id.values()];
     // Clean up instances for vaults no longer accessible
     for (const [chatId, inst] of this._instances) {
-      if (!found.some((v) => v.chatId === chatId)) {
+      if (!by_id.has(chatId)) {
         inst.channel.dispose();
         inst.db.close();
         this._instances.delete(chatId);
       }
     }
     this.onChange();
+  }
+
+  /** Chat ids previously synced locally under shared-vaults/<chatId>/ */
+  _listKnownSharedChatIds() {
+    const root = path.join(this.userDataPath, 'shared-vaults');
+    if (!fs.existsSync(root)) return [];
+    return fs.readdirSync(root)
+      .map((name) => Number(name))
+      .filter((chat_id) => Number.isFinite(chat_id) && chat_id !== this.ownChatId);
+  }
+
+  /**
+   * Re-validate a known chat id (disk cache / prior discover) when getChats omitted it.
+   * @param {number} chatId
+   * @returns {Promise<{ chatId: number, title: string } | null>}
+   */
+  async _verifySharedVaultChat(chatId) {
+    const previous = this._vaults.find((vault_item) => vault_item.chatId === chatId) || null;
+    try {
+      const chat = await this.client.invoke({ _: 'getChat', chat_id: chatId });
+      const type = chat?.type;
+      if (type?._ !== 'chatTypeSupergroup' || !type.is_channel) {
+        return previous;
+      }
+      const full = await this.client.invoke({
+        _: 'getSupergroupFullInfo',
+        supergroup_id: type.supergroup_id,
+      });
+      const description = String(full?.description || '');
+      const title = String(chat.title || '');
+      const marker = '#televault-v1';
+      if (description.includes(marker) || title.includes(marker)) {
+        return { chatId, title: chat.title || previous?.title || `Vault ${chatId}` };
+      }
+      // Still treat as shared vault if we already have a local index for it.
+      if (previous || this._listKnownSharedChatIds().includes(chatId)) {
+        return { chatId, title: chat.title || previous?.title || `Vault ${chatId}` };
+      }
+      return null;
+    } catch {
+      if (previous) return previous;
+      if (this._listKnownSharedChatIds().includes(chatId)) {
+        return { chatId, title: previous?.title || `Vault ${chatId}` };
+      }
+      return null;
+    }
   }
 
   getDiscoveredVaults() {
@@ -70,6 +133,24 @@ class SharedVaultManager {
   }
 
   /**
+   * Force a full Telegram history rescan into the shared vault index
+   * (ignores session scanned flag and incremental last_message_id shortcut).
+   * @param {number} chatId
+   * @param {(n: number) => void} [onProgress]
+   * @returns {Promise<number>} messages scanned
+   */
+  async forceRescanVault(chatId, onProgress) {
+    const inst = this._ensureInstance(chatId);
+    inst.scanned = false;
+    inst.channel.listenUpdates(chatId);
+    const scanned = await inst.channel.scanHistory(chatId, onProgress, { forceFull: true });
+    inst.scanned = true;
+    inst.channel.onChange(() => this.onChange());
+    this.onChange();
+    return scanned;
+  }
+
+  /**
    * @param {number} chatId
    * @param {string} folder
    * @param {string} sortField
@@ -94,7 +175,17 @@ class SharedVaultManager {
     const folderItems = sorted.folders.map((name) => {
       const folderPath = `${folder}${name}/`;
       const mtime = folderMtime(all, folderPath);
-      return { name, mtime: mtime.toISOString(), size: folderSize(all, folderPath) };
+      const counts = folderCounts(all, folderPath);
+      return {
+        name,
+        path: folderPath,
+        mtime: mtime.toISOString(),
+        size: folderSize(all, folderPath),
+        fileCount: counts.fileCount,
+        folderCount: counts.folderCount,
+        totalFiles: counts.totalFiles,
+        totalFolders: counts.totalFolders,
+      };
     });
     const folderTags = inst.db.folderTagsIndex();
     const files = sorted.files.map((e) => ({
@@ -108,7 +199,8 @@ class SharedVaultManager {
       localPath: null,
       isDir: isDir(e),
     }));
-    return { ok: true, folders: folderItems, files };
+    const currentCounts = folderCounts(all, folder);
+    return { ok: true, folders: folderItems, files, counts: currentCounts };
   }
 
   /**
@@ -138,6 +230,50 @@ class SharedVaultManager {
     const inst = this._instances.get(chatId);
     if (!inst) return { ok: false, count: 0 };
     return { ok: true, count: inst.db.listVisibleFileCount() };
+  }
+
+  /**
+   * Build (or reuse) a VaultService that uploads into a shared vault channel.
+   * Used by GDrive sync when the user selects a non-personal sync target.
+   * @param {number|string} chatId
+   * @param {{ queue: import('../transfer/transferQueue').TransferQueue, onChange?: () => void }} deps
+   */
+  async ensureUploadVault(chatId, deps) {
+    const numeric_id = typeof chatId === 'number' ? chatId : Number(chatId);
+    if (!Number.isFinite(numeric_id)) throw new Error('Invalid shared vault chat id');
+
+    if (!this._vaults.some((vault_item) => vault_item.chatId === numeric_id)) {
+      await this.discover();
+    }
+    if (!this._vaults.some((vault_item) => vault_item.chatId === numeric_id)) {
+      throw new Error('Shared vault not found or inaccessible');
+    }
+    if (!deps?.queue) throw new Error('Transfer queue required for shared vault upload');
+
+    await this.scanVault(numeric_id);
+    const inst = this._instances.get(numeric_id);
+    if (!inst) throw new Error('Shared vault instance missing');
+
+    if (!inst.vaultService) {
+      inst.vaultService = new VaultService({
+        client: this.client,
+        db: inst.db,
+        channel: inst.channel,
+        queue: deps.queue,
+        chatId: numeric_id,
+        onChange: deps.onChange || this.onChange,
+      });
+    } else {
+      inst.vaultService.queue = deps.queue;
+      if (deps.onChange) inst.vaultService.onChange = deps.onChange;
+    }
+    return inst.vaultService;
+  }
+
+  /** @param {number} chatId */
+  getVaultTitle(chatId) {
+    const hit = this._vaults.find((vault_item) => vault_item.chatId === Number(chatId));
+    return hit?.title || null;
   }
 
   /**

@@ -11,6 +11,13 @@ export function isExcludedMoveFolder(path, sourceFolders = []) {
   return sourceFolders.some((folderPath) => path === folderPath || path.startsWith(folderPath));
 }
 
+export function joinFolderPath(parent, nameOrItem) {
+  const name = typeof nameOrItem === 'string' ? nameOrItem : nameOrItem?.name;
+  if (!name) return parent;
+  const base = parent.endsWith('/') ? parent : `${parent}/`;
+  return `${base}${name}/`.replace(/\/+/g, '/');
+}
+
 export function folderDisplayName(path, myDriveLabel) {
   if (!path || path === '/') return myDriveLabel;
   return path.split('/').filter(Boolean).at(-1) || myDriveLabel;

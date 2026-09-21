@@ -3,13 +3,18 @@ import { useI18n } from '../context/I18nContext';
 import { useDashboard } from '../hooks/useDashboard';
 import { DashboardUploadChart } from '../components/DashboardUploadChart';
 import { DashboardRankList } from '../components/DashboardRankList';
+import { DashboardDayDetail } from '../components/DashboardDayDetail';
 import { formatSize, formatDate } from '../utils/format';
 
 export function DashboardScreen({ onOpenFolder, onOpenFile }) {
   const { t } = useI18n();
   const [rangeDays, setRangeDays] = useState(30);
   const [chartMode, setChartMode] = useState('count');
-  const { stats, loading, error, reload } = useDashboard({ enabled: true, rangeDays });
+  const [selectedDate, setSelectedDate] = useState(null);
+  const { stats, loading, error, reload } = useDashboard({
+    enabled: true,
+    rangeDays,
+  });
 
   if (loading && !stats) {
     return (
@@ -30,10 +35,18 @@ export function DashboardScreen({ onOpenFolder, onOpenFile }) {
     );
   }
 
+  const selectedDayData = selectedDate
+    ? (stats?.uploadsPerDay || []).find((d) => d.date === selectedDate)
+    : null;
+
   const folderRows = (stats?.topFolders || []).map((row) => ({
     key: row.path,
     onClick: () => onOpenFolder(row.path),
-    cells: [row.name, formatSize(row.bytes), String(row.fileCount)],
+    cells: [
+      { title: row.name, subtext: row.subtext },
+      formatSize(row.bytes),
+      String(row.fileCount),
+    ],
   }));
 
   const fileRows = (stats?.topFiles || []).map((row) => ({
@@ -79,14 +92,20 @@ export function DashboardScreen({ onOpenFolder, onOpenFile }) {
               <button
                 type="button"
                 className={`gd-dashboard-toggle ${rangeDays === 7 ? 'active' : ''}`}
-                onClick={() => setRangeDays(7)}
+                onClick={() => {
+                  setRangeDays(7);
+                  setSelectedDate(null);
+                }}
               >
                 {t('dashboardRange7')}
               </button>
               <button
                 type="button"
                 className={`gd-dashboard-toggle ${rangeDays === 30 ? 'active' : ''}`}
-                onClick={() => setRangeDays(30)}
+                onClick={() => {
+                  setRangeDays(30);
+                  setSelectedDate(null);
+                }}
               >
                 {t('dashboardRange30')}
               </button>
@@ -99,8 +118,18 @@ export function DashboardScreen({ onOpenFolder, onOpenFile }) {
           emptyLabel={t('dashboardEmpty')}
           countLabel={t('dashboardModeCount')}
           bytesLabel={t('dashboardModeBytes')}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
         />
       </div>
+
+      {selectedDayData && (
+        <DashboardDayDetail
+          dayData={selectedDayData}
+          onClose={() => setSelectedDate(null)}
+          onOpenFile={onOpenFile}
+        />
+      )}
 
       <div className="gd-dashboard-lists">
         <DashboardRankList

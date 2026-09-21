@@ -6,15 +6,11 @@ import {
   folderDisplayName,
   isExcludedMoveFolder,
   isInvalidMoveDestination,
+  joinFolderPath,
 } from '../utils/moveTargets';
 import { IconChevronRight, IconFolder, IconSearch } from './DriveIcons';
 
 const vaultApi = window.televault?.vault;
-
-function joinFolderPath(parent, name) {
-  const base = parent.endsWith('/') ? parent : `${parent}/`;
-  return `${base}${name}/`.replace(/\/+/g, '/');
-}
 
 export function MoveToDialog({
   title,
@@ -32,6 +28,7 @@ export function MoveToDialog({
   const [childFolders, setChildFolders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedPath, setSelectedPath] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (tab !== 'all' || query.trim()) return undefined;
@@ -41,13 +38,13 @@ export function MoveToDialog({
       setLoading(true);
       try {
         const result = await vaultApi?.getListing(browsePath, 'name', 'asc');
-        if (cancelled || !result?.ok) {
+        if (cancelled || !result?.ok || !Array.isArray(result?.folders)) {
           if (!cancelled) setChildFolders([]);
           return;
         }
         const next = result.folders
-          .map((name) => joinFolderPath(browsePath, name))
-          .filter((path) => !isExcludedMoveFolder(path, sourceFolders));
+          .map((item) => joinFolderPath(browsePath, item))
+          .filter((path) => Boolean(path) && !isExcludedMoveFolder(path, sourceFolders));
         if (!cancelled) setChildFolders(next);
       } finally {
         if (!cancelled) setLoading(false);
@@ -246,16 +243,31 @@ export function MoveToDialog({
         <div className="gd-move-footer">
           <div className="gd-move-selected-path">{selectedLabel}</div>
           <div className="gd-dialog-actions">
-            <button type="button" className="gd-dialog-btn" onClick={onCancel}>
+            <button type="button" className="gd-dialog-btn" disabled={submitting} onClick={onCancel}>
               {t('cancel')}
             </button>
             <button
               type="button"
               className="gd-dialog-btn gd-dialog-btn--primary"
-              disabled={disabled}
-              onClick={() => selectedPath && !disabled && onConfirm(selectedPath)}
+              disabled={disabled || submitting}
+              onClick={async () => {
+                if (!selectedPath || disabled || submitting) return;
+                setSubmitting(true);
+                try {
+                  await onConfirm(selectedPath);
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
             >
-              {t('move')}
+              {submitting ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <span>{t('moving')}</span>
+                </span>
+              ) : (
+                t('move')
+              )}
             </button>
           </div>
         </div>

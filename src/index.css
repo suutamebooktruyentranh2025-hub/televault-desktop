@@ -6,6 +6,8 @@
 [data-theme='light'] {
   --gd-bg: #f8f9fa;
   --gd-surface: #ffffff;
+  --gd-surface-elevated: #f8f9fa;
+  --gd-surface-hover: #f1f3f4;
   --gd-primary: #1a73e8;
   --gd-primary-hover: #1765cc;
   --gd-primary-light: #e8f0fe;
@@ -33,6 +35,8 @@
 [data-theme='dark'] {
   --gd-bg: #131313;
   --gd-surface: #1e1f20;
+  --gd-surface-elevated: #28292a;
+  --gd-surface-hover: #2d2e30;
   --gd-primary: #8ab4f8;
   --gd-primary-hover: #aecbfa;
   --gd-primary-light: #394457;
@@ -57,14 +61,15 @@
   color-scheme: dark;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
-
+html,
+body,
 #root {
-  min-height: 100vh;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Google Drive utility classes */
@@ -125,6 +130,14 @@ body {
 .gd-row.selected:hover {
   background: var(--gd-selected-hover);
 }
+.gd-row.drop-target {
+  background: var(--gd-selected) !important;
+  outline: 2px solid var(--gd-primary) !important;
+  outline-offset: -2px;
+}
+.gd-drag-source {
+  opacity: 0.45 !important;
+}
 
 .gd-row-checkbox {
   opacity: 0;
@@ -134,6 +147,20 @@ body {
 .gd-row.selected .gd-row-checkbox,
 .gd-list-has-selection .gd-row-checkbox {
   opacity: 1;
+}
+
+/* Always visible — Duplicates multi-select (not Drive hover row chrome) */
+.gd-duplicates-checkbox {
+  opacity: 1;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--gd-primary);
+  cursor: pointer;
+}
+.gd-duplicates-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .gd-row-actions {
@@ -147,7 +174,8 @@ body {
   transition: opacity 0.12s;
 }
 .gd-row:hover .gd-row-actions,
-.gd-row.selected .gd-row-actions {
+.gd-row.selected .gd-row-actions,
+.gd-row-actions.gd-row-actions--always {
   opacity: 1;
 }
 
@@ -883,6 +911,12 @@ body {
   background: var(--gd-selected);
   border-color: transparent;
   box-shadow: none;
+}
+.gd-grid-folder.drop-target {
+  background: var(--gd-selected) !important;
+  border-color: var(--gd-primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), var(--gd-shadow-sm);
+  transform: scale(1.02);
 }
 
 .gd-grid-file {
@@ -1644,6 +1678,7 @@ body {
   margin-bottom: 12px;
 }
 
+
 .gd-dashboard-kpi-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1743,10 +1778,16 @@ body {
   width: 100%;
 }
 
+.gd-dashboard-chart-wrap {
+  position: relative;
+  width: 100%;
+}
+
 .gd-dashboard-chart-svg {
   display: block;
   width: 100%;
   height: auto;
+  overflow: visible;
 }
 
 .gd-dashboard-chart-grid {
@@ -1756,24 +1797,195 @@ body {
 
 .gd-dashboard-chart-line {
   stroke: var(--gd-primary);
-  stroke-width: 2;
+  stroke-width: 2.2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
+.gd-dashboard-chart-crosshair {
+  stroke: var(--gd-primary);
+  stroke-dasharray: 3 3;
+  stroke-width: 1.5;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.gd-dashboard-chart-hitbox {
+  cursor: pointer;
+  outline: none;
+}
+
 .gd-dashboard-chart-dot {
   fill: var(--gd-primary);
+  transition: r 0.15s ease, fill 0.15s ease;
+}
+
+.gd-dashboard-chart-dot.is-selected {
+  stroke: #ffffff;
+  stroke-width: 2px;
+}
+
+.gd-dashboard-chart-dot-pulse {
+  fill: var(--gd-primary);
+  opacity: 0.3;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.gd-dashboard-chart-dot-active {
+  fill: var(--gd-primary);
+  stroke: #ffffff;
+  stroke-width: 2px;
+  pointer-events: none;
 }
 
 .gd-dashboard-chart-axis {
   fill: var(--gd-text-secondary);
   font-size: 10px;
+  user-select: none;
+}
+
+.gd-dashboard-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin-top: -12px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  color: #f8fafc;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 30;
+  min-width: 140px;
+  white-space: nowrap;
+  transition: left 0.08s ease, top 0.08s ease;
+}
+
+[data-theme='light'] .gd-dashboard-tooltip {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #0f172a;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.gd-dashboard-tooltip-header {
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='light'] .gd-dashboard-tooltip-header {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.gd-dashboard-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.45;
+}
+
+.gd-dashboard-tooltip-label {
+  color: var(--gd-text-secondary);
+  font-size: 11px;
+}
+
+.gd-dashboard-tooltip-val {
+  font-weight: 600;
+}
+
+.gd-dashboard-chart-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
 }
 
 .gd-dashboard-chart-caption {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 11px;
   color: var(--gd-text-secondary);
+}
+
+.gd-dashboard-chart-hint {
+  font-size: 11px;
+  color: var(--gd-text-secondary);
+  opacity: 0.85;
+}
+
+.gd-dashboard-day-detail {
+  margin-bottom: 20px;
+  border-color: var(--gd-primary);
+  background: var(--gd-card);
+}
+
+.gd-dashboard-day-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.gd-dashboard-day-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--gd-primary-light);
+  color: var(--gd-primary);
+}
+
+.gd-dashboard-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--gd-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.gd-dashboard-close-btn:hover {
+  background: var(--gd-hover);
+  color: var(--gd-text);
+}
+
+.gd-dashboard-file-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.gd-dashboard-cell-with-subtext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+}
+
+.gd-dashboard-cell-title {
+  font-weight: 500;
+  color: var(--gd-text);
+}
+
+.gd-dashboard-cell-subtext {
+  font-size: 11px;
+  color: var(--gd-text-secondary);
+  opacity: 0.85;
 }
 
 .gd-dashboard-lists {

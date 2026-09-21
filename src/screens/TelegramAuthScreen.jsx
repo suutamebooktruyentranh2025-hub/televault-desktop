@@ -129,7 +129,7 @@ export function TelegramAuthScreen({
         const phone = formatInternationalPhone(getPhoneCountry(countryIso).dial, nationalNumber);
         if (phase === 'telegramApiSetup') {
           if (!apiId.trim() || !apiHash.trim()) {
-            setLocalError('Vui lòng nhập API ID và API Hash từ my.telegram.org');
+            setLocalError(t('authApiErrorRequired'));
             return;
           }
           setPendingPhone(phone);
@@ -138,13 +138,15 @@ export function TelegramAuthScreen({
           await onSubmitPhone?.(phone);
         }
       }
+    } catch (e) {
+      setLocalError(e.message || String(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex flex-col min-h-screen items-center justify-center bg-[var(--gd-bg)] px-6">
+    <div className="flex flex-col h-full overflow-y-auto items-center justify-center bg-[var(--gd-bg)] px-6 py-8">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-md rounded-lg bg-[var(--gd-surface)] p-8 shadow-[var(--gd-shadow-md)]"
@@ -187,7 +189,7 @@ export function TelegramAuthScreen({
               nationalNumber={nationalNumber}
               onNationalNumberChange={setNationalNumber}
               locale={locale}
-              label={t('authPhoneLabel') + ' (CÓ MÃ VÙNG)'}
+              label={t('authPhoneLabelWithCode', { label: t('authPhoneLabel') })}
               hint={t('authPhoneHint')}
               autoFocus
               disabled={busy}
@@ -195,11 +197,11 @@ export function TelegramAuthScreen({
             
             <div className="rounded-xl border border-[var(--gd-border)] bg-gray-50/50 shadow-sm dark:bg-zinc-800/20">
               <div className="px-4 py-3 text-sm font-medium text-[var(--gd-text)] border-b border-[var(--gd-border)]">
-                <span>Cấu hình API</span>
+                <span>{t('authApiConfigTitle')}</span>
               </div>
               <div className="p-4 space-y-4">
                 <p className="text-xs text-[var(--gd-text-secondary)]">
-                  Bắt buộc: Vui lòng đăng ký và nhập API ID cùng API Hash từ my.telegram.org.
+                  {t('authApiConfigDesc')}
                 </p>
                 <label className="block text-sm font-medium text-[var(--gd-text-secondary)]">
                   {t('apiId')}
@@ -207,7 +209,7 @@ export function TelegramAuthScreen({
                     className="mt-2 w-full rounded-md border border-[var(--gd-border)] px-3 py-2 text-sm text-[var(--gd-text)] outline-none focus:border-[var(--gd-primary)] focus:ring-1 focus:ring-[var(--gd-primary)] bg-[var(--gd-surface)]"
                     value={apiId}
                     onChange={(e) => setApiId(e.target.value)}
-                    placeholder="VD: 12345678"
+                    placeholder={t('authApiIdPlaceholder')}
                     disabled={busy}
                   />
                 </label>
@@ -217,7 +219,7 @@ export function TelegramAuthScreen({
                     className="mt-2 w-full rounded-md border border-[var(--gd-border)] px-3 py-2 text-sm text-[var(--gd-text)] outline-none focus:border-[var(--gd-primary)] focus:ring-1 focus:ring-[var(--gd-primary)] bg-[var(--gd-surface)]"
                     value={apiHash}
                     onChange={(e) => setApiHash(e.target.value)}
-                    placeholder="VD: abcdef1234567890abcdef"
+                    placeholder={t('authApiHashPlaceholder')}
                     disabled={busy}
                   />
                 </label>
@@ -296,21 +298,36 @@ export function TelegramAuthScreen({
             onClick={onResetApi}
             className="text-sm font-medium text-[var(--gd-primary)] hover:underline"
           >
-            Thay đổi cấu hình API (API ID/Hash)
+            {t('authChangeApiConfig')}
           </button>
         )}
         
+        <button
+          type="button"
+          onClick={async () => {
+            if (!(await confirm(t('settingsBackupImportConfirm')))) return;
+            const result = await window.televault?.backup?.import();
+            if (result && !result.ok && !result.cancelled) {
+              // Keep auth screen usable if import fails before relaunch.
+              console.error('[backup:import]', result.error);
+            }
+          }}
+          className="text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-primary)] hover:underline"
+        >
+          {t('settingsBackupImport')}
+        </button>
+
         {onFactoryReset && (
           <button
             type="button"
             onClick={async () => {
-              if (await confirm('Bạn có chắc chắn muốn xóa toàn bộ dữ liệu cài đặt của ứng dụng không? Hành động này không thể hoàn tác.')) {
+              if (await confirm(t('factoryResetConfirm'))) {
                 onFactoryReset();
               }
             }}
             className="text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-danger)] hover:underline"
           >
-            Xóa toàn bộ dữ liệu ứng dụng
+            {t('authWipeAllData')}
           </button>
         )}
       </div>

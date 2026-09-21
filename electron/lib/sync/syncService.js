@@ -35,7 +35,11 @@ class SyncService {
   }
 
   getSnapshot() {
+    const config = typeof this.db?.getSyncConfig === 'function' ? this.db.getSyncConfig() : null;
     return {
+      enabled: Boolean(config?.syncEnabled && config?.syncFolder),
+      syncEnabled: Boolean(config?.syncEnabled),
+      syncFolder: config?.syncFolder || null,
       status: this.status,
       lastSyncAt: this.lastSyncAt,
       pendingCount: this.pendingCount,
@@ -184,7 +188,7 @@ class SyncService {
         // Pause watcher to avoid re-triggering
         this._watcher?.pause();
         try {
-          const { done } = this.vault.enqueueUpload(localPath, destPath);
+          const { done } = await this.vault.enqueueUpload(localPath, destPath);
           await done;
         } finally {
           this._watcher?.resume();
@@ -261,7 +265,7 @@ class SyncService {
           fs.renameSync(localPath, conflictFullPath);
           // Upload conflict copy to Telegram
           const conflictDest = `${syncVaultFolder}${conflictRelPath}`;
-          const { done } = this.vault.enqueueUpload(conflictFullPath, conflictDest);
+          const { done } = await this.vault.enqueueUpload(conflictFullPath, conflictDest);
           await done;
 
           // Download remote version to local
@@ -335,7 +339,10 @@ class SyncService {
               const conflictRelPath = conflictName(lf.relPath);
               const conflictFullPath = path.join(config.syncFolder, conflictRelPath);
               fs.renameSync(path.join(config.syncFolder, lf.relPath), conflictFullPath);
-              const { done } = this.vault.enqueueUpload(conflictFullPath, `${config.syncVaultFolder}${conflictRelPath}`);
+              const { done } = await this.vault.enqueueUpload(
+                conflictFullPath,
+                `${config.syncVaultFolder}${conflictRelPath}`,
+              );
               await done;
               // Download remote version
               const entry = this.db.getAll().find(e => e.messageId === remote.messageId);
@@ -348,7 +355,7 @@ class SyncService {
               this.db.syncManifestUpsert(conflictRelPath, { sha256: lf.sha256, mtime: lf.mtime, side: 'both' });
             } else {
               // Local only — upload
-              const { done } = this.vault.enqueueUpload(
+              const { done } = await this.vault.enqueueUpload(
                 path.join(config.syncFolder, lf.relPath),
                 `${config.syncVaultFolder}${lf.relPath}`,
               );
@@ -377,7 +384,7 @@ class SyncService {
         case 'local-source': {
           // Upload everything from local, ignore remote
           for (const lf of localFiles) {
-            const { done } = this.vault.enqueueUpload(
+            const { done } = await this.vault.enqueueUpload(
               path.join(config.syncFolder, lf.relPath),
               `${config.syncVaultFolder}${lf.relPath}`,
             );

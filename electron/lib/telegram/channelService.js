@@ -201,10 +201,27 @@ class ChannelService {
     return msg?.content?._ === 'messageDocument';
   }
 
-  async scanHistory(chatId, onProgress) {
+  async scanHistory(chatId, onProgress, opts = {}) {
+    if (opts.forceFull === true) {
+      return this._scanHistoryFull(chatId, onProgress);
+    }
+    const lastKnown = this.db.getLastMessageId();
+    const hasLocalIndex = lastKnown > 0 && this.db.countEntries() > 0;
+
+    if (hasLocalIndex) {
+      return this._scanHistoryIncremental(chatId, lastKnown, onProgress);
+    }
+    return this._scanHistoryFull(chatId, onProgress);
+  }
+
+  /**
+   * Full network history walk — used on first sync or empty local index.
+   * Reconciles DB to the complete set of message ids seen on Telegram.
+   */
+  async _scanHistoryFull(chatId, onProgress) {
     let fromMessageId = 0;
     let scanned = 0;
-    let maxId = this.db.getLastMessageId();
+    let maxId = 0;
     const seenIds = new Set();
 
     while (true) {
@@ -232,9 +249,58 @@ class ChannelService {
       if (nextFrom === fromMessageId) break;
       fromMessageId = nextFrom;
       onProgress?.(scanned);
+      await new Promise((resolve) => setTimeout(resolve, 40));
     }
 
     this.db.reconcileToMessageIds(seenIds);
+    this.db.setLastMessageId(maxId);
+    this._emitChange();
+    return scanned;
+  }
+
+  /**
+   * Fetch only messages newer than lastKnown. Does not reconcile — offline
+   * deletes are handled by listenUpdates while the app is running.
+   */
+  async _scanHistoryIncremental(chatId, lastKnown, onProgress) {
+    let fromMessageId = 0;
+    let scanned = 0;
+    let maxId = lastKnown;
+
+    while (true) {
+      const page = await this.client.invoke({
+        _: 'getChatHistory',
+        chat_id: chatId,
+        from_message_id: fromMessageId,
+        offset: 0,
+        limit: 100,
+        only_local: false,
+      });
+      const messages = page.messages || [];
+      if (messages.length === 0) break;
+
+      let hitKnown = false;
+      for (const msg of messages) {
+        const id = msg.id;
+        if (id <= lastKnown) {
+          hitKnown = true;
+          continue;
+        }
+        const entry = this.entryFromMessage(msg);
+        if (entry) this.db.upsert(entry);
+        scanned += 1;
+        if (id > maxId) maxId = id;
+      }
+
+      onProgress?.(scanned);
+      if (hitKnown) break;
+
+      const nextFrom = messages[messages.length - 1].id;
+      if (nextFrom === fromMessageId) break;
+      fromMessageId = nextFrom;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+
     this.db.setLastMessageId(maxId);
     this._emitChange();
     return scanned;
@@ -365,6 +431,73 @@ class ChannelService {
     const id = inner?.id ?? doc.id;
     if (id == null) return null;
     return typeof id === 'number' ? id : Number.parseInt(String(id), 10);
+  }
+
+  /**
+   * Sweeps and deletes any stuck outgoing messages (sending_state) in the given chat
+   * and all chats in chatListMain to prevent TDLib from repeatedly failing and spamming "Can't resend local file".
+   * @param {number} [chatId]
+   * @returns {Promise<number>} Number of swept messages
+   */
+  async sweepStuckSendingMessages(chatId) {
+    try {
+      const chatIds = new Set();
+      if (chatId) chatIds.add(chatId);
+
+      const chats = await this.client.invoke({
+        _: 'getChats',
+        chat_list: { _: 'chatListMain' },
+        limit: 100,
+      }).catch(() => null);
+      for (const id of chats?.chat_ids || []) chatIds.add(id);
+
+      let totalSwept = 0;
+      for (const id of chatIds) {
+        let fromMessageId = 0;
+        const toDelete = [];
+
+        while (true) {
+          const page = await this.client.invoke({
+            _: 'getChatHistory',
+            chat_id: id,
+            from_message_id: fromMessageId,
+            offset: 0,
+            limit: 100,
+            only_local: true,
+          }).catch(() => null);
+
+          if (!page?.messages || page.messages.length === 0) break;
+
+          for (const msg of page.messages) {
+            if (msg.sending_state) {
+              toDelete.push(msg.id);
+            }
+          }
+
+          const nextFrom = page.messages[page.messages.length - 1].id;
+          if (nextFrom === fromMessageId) break;
+          fromMessageId = nextFrom;
+        }
+
+        if (toDelete.length > 0) {
+          for (let i = 0; i < toDelete.length; i += 100) {
+            const chunk = toDelete.slice(i, i + 100);
+            await this.client.invoke({
+              _: 'deleteMessages',
+              chat_id: id,
+              message_ids: chunk,
+              revoke: true,
+            }).catch(() => {});
+          }
+          console.log(`[TeleVault] Swept ${toDelete.length} stuck sending messages in chat ${id}`);
+          totalSwept += toDelete.length;
+        }
+      }
+      return totalSwept;
+    } catch (e) {
+      console.warn(`[TeleVault] sweepStuckSendingMessages warning:`, e.message);
+      return 0;
+    }
   }
 
   /**

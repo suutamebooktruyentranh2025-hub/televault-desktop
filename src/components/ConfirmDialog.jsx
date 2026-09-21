@@ -19,14 +19,14 @@ export function ConfirmDialog({ message, onConfirm, onCancel }) {
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
         </div>
-        <h3 className="gd-dialog-title">Xác nhận thao tác</h3>
+        <h3 className="gd-dialog-title">{t('confirmTitle')}</h3>
         <p className="gd-dialog-message">{message}</p>
         <div className="gd-dialog-actions">
           <button type="button" className="gd-dialog-btn" onClick={onCancel}>
             {t('cancel')}
           </button>
           <button type="button" className="gd-dialog-btn gd-dialog-btn--danger" onClick={onConfirm}>
-            Xác nhận
+            {t('confirmAction')}
           </button>
         </div>
       </div>

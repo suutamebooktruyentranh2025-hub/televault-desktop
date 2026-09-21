@@ -3,6 +3,7 @@ import { useI18n } from '../context/I18nContext';
 import { useTransfers } from '../hooks/useTransfers';
 import { TransferProgressRing } from '../components/TransferProgressRing';
 import { IconClose, IconFolder } from '../components/DriveIcons';
+import { formatEta, formatSpeed } from '../utils/format';
 
 const STATUS_ORDER = { running: 0, queued: 1, paused: 2, failed: 3, done: 4 };
 
@@ -12,18 +13,18 @@ function sortTasks(tasks) {
     .sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
 }
 
-function statusBadge(status) {
+function statusBadge(status, t) {
   switch (status) {
     case 'running':
-      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--gd-primary)]">⟳ Đang tải</span>;
+      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--gd-primary)]">{t('transfersStatusRunningBadge')}</span>;
     case 'queued':
-      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--gd-text-secondary)]">⏳ Đang chờ</span>;
+      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--gd-text-secondary)]">{t('transfersStatusQueuedBadge')}</span>;
     case 'paused':
-      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500">⏸ Tạm dừng</span>;
+      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500">{t('transfersStatusPausedBadge')}</span>;
     case 'done':
-      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-500">✓ Hoàn tất</span>;
+      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-500">{t('transfersStatusDoneBadge')}</span>;
     case 'failed':
-      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500">✕ Lỗi</span>;
+      return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500">{t('transfersStatusFailedBadge')}</span>;
     default:
       return null;
   }
@@ -48,6 +49,18 @@ export function TransferScreen() {
 
   const currentList = activeTab === 'active' ? active : finished;
 
+  const doneCount = finished.filter((x) => x.status === 'done').length;
+  const failedCount = finished.filter((x) => x.status === 'failed').length;
+  const doneCountText = doneCount > 0 ? t('transfersDoneCount', { n: doneCount }) : '';
+  const failedCountText = failedCount > 0 ? t('transfersFailedCount', { n: failedCount }) : '';
+
+  let subtitle = t('transfersEmptySubtitle');
+  if (active.length > 0) {
+    subtitle = t('transfersActiveCount', { n: active.length }) + (doneCountText ? ` · ${doneCountText}` : '');
+  } else if (finished.length > 0) {
+    subtitle = (doneCountText || '') + (failedCountText ? (doneCountText ? ` · ${failedCountText}` : failedCountText) : '');
+  }
+
   return (
     <div className="gd-settings flex min-h-0 flex-1 flex-col overflow-auto p-4">
       {/* Summary card */}
@@ -62,14 +75,9 @@ export function TransferScreen() {
               />
             </div>
             <div className="flex-1">
-              <h2 className="text-base font-semibold text-[var(--gd-text)]">Quản lý truyền tải</h2>
+              <h2 className="text-base font-semibold text-[var(--gd-text)]">{t('transfersManageTitle')}</h2>
               <p className="text-xs text-[var(--gd-text-secondary)] mt-0.5">
-                {active.length > 0
-                  ? `${active.length} tệp đang tải` + (finished.filter(x => x.status === 'done').length > 0 ? ` · ${finished.filter(x => x.status === 'done').length} đã hoàn tất` : '')
-                  : finished.length > 0
-                    ? `${finished.filter(x => x.status === 'done').length} đã hoàn tất` + (finished.filter(x => x.status === 'failed').length > 0 ? ` · ${finished.filter(x => x.status === 'failed').length} lỗi` : '')
-                    : 'Không có tệp nào đang truyền tải'
-                }
+                {subtitle}
               </p>
             </div>
           </div>
@@ -89,7 +97,7 @@ export function TransferScreen() {
               }`}
               onClick={() => setActiveTab('active')}
             >
-              Đang tải ({active.length})
+              {t('transfersTabActive', { n: active.length })}
             </button>
             <button
               type="button"
@@ -100,7 +108,7 @@ export function TransferScreen() {
               }`}
               onClick={() => setActiveTab('finished')}
             >
-              Đã hoàn tất ({finished.length})
+              {t('transfersTabFinished', { n: finished.length })}
             </button>
           </div>
           {activeTab === 'finished' && finished.length > 0 && (
@@ -109,7 +117,7 @@ export function TransferScreen() {
               className="text-xs text-red-500 hover:underline font-semibold cursor-pointer pb-2"
               onClick={() => transfers.clearFinished()}
             >
-              Xóa tất cả
+              {t('transfersClearAll')}
             </button>
           )}
         </div>
@@ -117,7 +125,7 @@ export function TransferScreen() {
         <div className="gd-settings-card h-[320px] flex flex-col overflow-hidden">
           {currentList.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-sm opacity-60">
-              {activeTab === 'active' ? 'Không có tệp nào đang tải' : 'Chưa có tệp nào hoàn tất'}
+              {activeTab === 'active' ? t('transfersEmptyActive') : t('transfersEmptyFinished')}
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
@@ -125,9 +133,9 @@ export function TransferScreen() {
                 <thead>
                   <tr className="border-b border-[var(--gd-border)] text-left text-xs font-medium text-[var(--gd-text-secondary)]">
                     <th className="w-12 px-3 py-2" />
-                    <th className="px-3 py-2">Tên tệp</th>
-                    <th className="hidden px-3 py-2 sm:table-cell w-28 text-right">Tiến trình</th>
-                    <th className="px-3 py-2 w-24 text-center">Trạng thái</th>
+                    <th className="px-3 py-2">{t('transfersColFile')}</th>
+                    <th className="hidden px-3 py-2 sm:table-cell w-28 text-right">{t('transfersColProgress')}</th>
+                    <th className="px-3 py-2 w-24 text-center">{t('transfersColStatus')}</th>
                     <th className="w-16 px-2 py-2" aria-hidden />
                   </tr>
                 </thead>
@@ -151,25 +159,54 @@ export function TransferScreen() {
                       </td>
                       <td className="hidden px-3 py-3 text-[var(--gd-text-secondary)] sm:table-cell text-right">
                         {task.status === 'running' && (
-                          <span className="text-[var(--gd-primary)] font-medium">
-                            {Math.round((task.progress || 0) * 100)}%
-                          </span>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-[var(--gd-primary)] font-medium">
+                              {Math.round((task.progress || 0) * 100)}%
+                            </span>
+                            {(formatSpeed(task.speedBps) || formatEta(task.etaSeconds)) && (
+                              <span className="text-[10px] text-[var(--gd-text-secondary)]">
+                                {[formatSpeed(task.speedBps), formatEta(task.etaSeconds) ? `ETA ${formatEta(task.etaSeconds)}` : null]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {task.status === 'done' && (
                           <span className="text-green-500 font-medium">100%</span>
                         )}
                       </td>
                       <td className="px-3 py-3 text-center">
-                        {statusBadge(task.status)}
+                        {statusBadge(task.status, t)}
                       </td>
                       <td className="px-2 py-2">
                         <div className="gd-row-actions justify-end shrink-0">
+                          {task.status === 'failed' && (
+                            <button
+                              type="button"
+                              className="gd-row-action text-[var(--gd-primary)] text-[11px] font-medium px-1"
+                              onClick={() => transfers.retry(task.id)}
+                              title={t('transferRetry')}
+                            >
+                              {t('transferRetry')}
+                            </button>
+                          )}
+                          {task.status === 'paused' && (
+                            <button
+                              type="button"
+                              className="gd-row-action text-[var(--gd-primary)] text-[11px] font-medium px-1"
+                              onClick={() => transfers.resume(task.id)}
+                              title={t('transferResume')}
+                            >
+                              {t('transferResume')}
+                            </button>
+                          )}
                           {(task.status === 'queued' || task.status === 'running') && (
                             <button
                               type="button"
                               className="gd-row-action text-[var(--gd-text-secondary)] hover:text-red-500"
                               onClick={() => transfers.cancel(task.id)}
-                              title="Hủy"
+                              title={t('transfersActionCancel')}
                             >
                               <IconClose className="h-4 w-4" />
                             </button>
@@ -182,7 +219,7 @@ export function TransferScreen() {
                                 const vaultDir = task.metadata.vaultPath.substring(0, task.metadata.vaultPath.lastIndexOf('/'));
                                 window.dispatchEvent(new CustomEvent('gd-navigate', { detail: vaultDir + '/' }));
                               }}
-                              title="Mở thư mục"
+                              title={t('openFolder')}
                             >
                               <IconFolder className="h-4 w-4" />
                             </button>

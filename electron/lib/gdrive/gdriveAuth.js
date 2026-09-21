@@ -12,8 +12,12 @@ class GDriveAuth {
   /**
    * @param {{ db: import('../db/indexDb').ReturnType<import('../db/indexDb').openIndexDb> }} opts
    */
-  constructor({ db }) {
+  constructor({ db, onAuthUrl } = {}) {
     this.db = db;
+    this.onAuthUrl = onAuthUrl || null;
+    this._active_authorization = false;
+    this._pending_auth = null;
+    this.currentAuthUrl = null;
   }
 
   get clientId() { return this.db.gdriveTokenGet('client_id'); }
@@ -24,55 +28,100 @@ class GDriveAuth {
   get email() { return this.db.gdriveTokenGet('email'); }
 
   isConnected() {
-    return Boolean(this.accessToken && this.refreshToken);
+    return Boolean(this.refreshToken || this.accessToken);
   }
 
   saveCredentials(clientId, clientSecret) {
-    this.db.gdriveTokenSet('client_id', clientId);
-    this.db.gdriveTokenSet('client_secret', clientSecret);
+    if (clientId) {
+      this.db.gdriveTokenSet('client_id', clientId);
+    } else if (typeof this.db.gdriveTokenDelete === 'function') {
+      this.db.gdriveTokenDelete('client_id');
+    }
+    if (clientSecret) {
+      this.db.gdriveTokenSet('client_secret', clientSecret);
+    } else if (typeof this.db.gdriveTokenDelete === 'function') {
+      this.db.gdriveTokenDelete('client_secret');
+    }
+  }
+
+  cancelAuthorization(reason = 'Đã hủy phiên xác thực Google Drive') {
+    if (this._pending_auth) {
+      const pending = this._pending_auth;
+      this._pending_auth = null;
+      if (typeof pending.reject === 'function') {
+        pending.reject(new Error(reason));
+      }
+    }
+    this._active_authorization = false;
+    this.currentAuthUrl = null;
+    if (typeof this.onAuthUrl === 'function') {
+      this.onAuthUrl(null);
+    }
   }
 
   /**
    * Start OAuth2 flow: open browser, listen for redirect.
-   * @returns {Promise<{ ok: boolean, email?: string, error?: string }>}
+   * @param {{ force?: boolean }} [opts]
+   * @returns {Promise<{ ok: boolean, email?: string, error?: string, authUrl?: string }>}
    */
-  async authorize() {
+  async authorize({ force = false } = {}) {
     const clientId = this.clientId;
     const clientSecret = this.clientSecret;
     if (!clientId || !clientSecret) return { ok: false, error: 'Missing client credentials' };
-
-    const { port, code } = await this._listenForCode();
-    const redirectUri = `http://localhost:${port}`;
-
-    const state = crypto.randomBytes(16).toString('hex');
-    const authUrl = `${AUTH_URL}?client_id=${encodeURIComponent(clientId)}`
-      + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-      + `&response_type=code&scope=${encodeURIComponent(SCOPES)}`
-      + `&access_type=offline&prompt=consent`
-      + `&state=${state}`;
-
-    await shell.openExternal(authUrl);
-
-    let authCode;
-    try {
-      authCode = await code;
-    } catch (e) {
-      return { ok: false, error: String(e.message || e) };
+    if (this._active_authorization) {
+      if (force) {
+        this.cancelAuthorization('Bắt đầu phiên xác thực mới');
+      } else {
+        return { ok: false, error: 'OAuth authorization already in progress' };
+      }
     }
 
-    // Exchange code for tokens
-    const tokens = await this._exchangeCode(authCode, redirectUri);
-    if (!tokens.ok) return tokens;
+    this._active_authorization = true;
+    try {
+      const expected_state = crypto.randomBytes(16).toString('hex');
+      const { port, code } = await this._listenForCode(expected_state);
+      const redirectUri = `http://localhost:${port}`;
 
-    this.db.gdriveTokenSet('access_token', tokens.access_token);
-    this.db.gdriveTokenSet('refresh_token', tokens.refresh_token);
-    this.db.gdriveTokenSet('expiry', tokens.expiry);
+      const authUrl = `${AUTH_URL}?client_id=${encodeURIComponent(clientId)}`
+        + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+        + `&response_type=code&scope=${encodeURIComponent(SCOPES)}`
+        + `&access_type=offline&prompt=select_account%20consent`
+        + `&state=${encodeURIComponent(expected_state)}`;
 
-    // Get user email
-    const email = await this._fetchEmail(tokens.access_token);
-    if (email) this.db.gdriveTokenSet('email', email);
+      this.currentAuthUrl = authUrl;
+      if (typeof this.onAuthUrl === 'function') {
+        this.onAuthUrl(authUrl);
+      }
+      await shell.openExternal(authUrl);
 
-    return { ok: true, email };
+      let authCode;
+      try {
+        authCode = await code;
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+
+      // Exchange code for tokens
+      const tokens = await this._exchangeCode(authCode, redirectUri);
+      if (!tokens.ok) return tokens;
+
+      this.db.gdriveTokenSet('access_token', tokens.access_token);
+      this.db.gdriveTokenSet('refresh_token', tokens.refresh_token);
+      this.db.gdriveTokenSet('expiry', tokens.expiry);
+
+      // Get user email
+      const email = await this._fetchEmail(tokens.access_token);
+      if (email) this.db.gdriveTokenSet('email', email);
+
+      return { ok: true, email };
+    } finally {
+      this._active_authorization = false;
+      this._pending_auth = null;
+      this.currentAuthUrl = null;
+      if (typeof this.onAuthUrl === 'function') {
+        this.onAuthUrl(null);
+      }
+    }
   }
 
   /**
@@ -115,39 +164,80 @@ class GDriveAuth {
     return data.access_token;
   }
 
-  disconnect() {
-    this.db.gdriveTokensClear();
+  disconnect({ keepCredentials = true } = {}) {
+    if (keepCredentials && typeof this.db.gdriveTokenDelete === 'function') {
+      this.db.gdriveTokenDelete('access_token');
+      this.db.gdriveTokenDelete('refresh_token');
+      this.db.gdriveTokenDelete('expiry');
+      this.db.gdriveTokenDelete('email');
+    } else {
+      this.db.gdriveTokensClear();
+    }
   }
 
   /**
    * Start a temporary local HTTP server to receive the OAuth redirect.
    * @returns {Promise<{ port: number, code: Promise<string> }>}
    */
-  _listenForCode() {
+  _listenForCode(expected_state) {
     return new Promise((resolve) => {
       const server = http.createServer();
       server.listen(0, '127.0.0.1', () => {
         const port = server.address().port;
+        let settled = false;
+        let timeout = null;
+
         const codePromise = new Promise((resolveCode, rejectCode) => {
-          const timeout = setTimeout(() => {
-            server.close();
+          const cleanup = () => {
+            if (settled) return;
+            settled = true;
+            if (timeout) clearTimeout(timeout);
+            try { server.close(); } catch {}
+          };
+
+          this._pending_auth = {
+            server,
+            reject: (err) => {
+              cleanup();
+              rejectCode(err);
+            },
+          };
+
+          timeout = setTimeout(() => {
+            cleanup();
             rejectCode(new Error('OAuth timeout — vui lòng thử lại'));
           }, 5 * 60 * 1000);
+          this._pending_auth.timeout = timeout;
 
           server.on('request', (req, res) => {
+            if (settled) return;
             const url = new URL(req.url, `http://localhost:${port}`);
             const code = url.searchParams.get('code');
             const error = url.searchParams.get('error');
+            const received_state = url.searchParams.get('state');
+            const pending_buffer = Buffer.from(expected_state || '');
+            const received_buffer = Buffer.from(received_state || '');
+            const valid_state = Boolean(
+              pending_buffer.length
+              && pending_buffer.length === received_buffer.length
+              && crypto.timingSafeEqual(pending_buffer, received_buffer),
+            );
+
+            if (!valid_state) {
+              res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+              res.end('<html><body><h2>Lỗi: OAuth state mismatch</h2></body></html>');
+              cleanup();
+              rejectCode(new Error('OAuth state mismatch'));
+              return;
+            }
+
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            cleanup();
             if (code) {
               res.end('<html><body><h2>Đã kết nối Google Drive! Bạn có thể đóng tab này.</h2></body></html>');
-              clearTimeout(timeout);
-              server.close();
               resolveCode(code);
             } else {
               res.end(`<html><body><h2>Lỗi: ${error || 'unknown'}</h2></body></html>`);
-              clearTimeout(timeout);
-              server.close();
               rejectCode(new Error(error || 'OAuth failed'));
             }
           });
@@ -200,11 +290,15 @@ class GDriveAuth {
         },
         timeout: 15000,
       }, (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
+        const chunks = [];
+        res.on('data', (c) => { chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)); });
         res.on('end', () => {
-          try { resolve(JSON.parse(data)); }
-          catch { reject(new Error('Invalid JSON response')); }
+          try {
+            const data = Buffer.concat(chunks).toString('utf8');
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error('Invalid JSON response'));
+          }
         });
       });
       req.on('timeout', () => {
@@ -230,11 +324,15 @@ class GDriveAuth {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 15000,
       }, (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
+        const chunks = [];
+        res.on('data', (c) => { chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)); });
         res.on('end', () => {
-          try { resolve(JSON.parse(data)); }
-          catch { reject(new Error('Invalid JSON response')); }
+          try {
+            const data = Buffer.concat(chunks).toString('utf8');
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error('Invalid JSON response'));
+          }
         });
       });
       req.on('timeout', () => {

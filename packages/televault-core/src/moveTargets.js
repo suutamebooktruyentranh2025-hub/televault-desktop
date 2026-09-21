@@ -5,14 +5,15 @@ function listAllFolders(all) {
   const folders = new Set();
 
   for (const entry of all) {
-    const parts = entry.path.split('/').filter(Boolean);
+    const normPath = typeof entry.path === 'string' ? entry.path.normalize('NFC') : entry.path;
+    const parts = normPath.split('/').filter(Boolean);
     if (parts[0] === K_TRASH_FOLDER_NAME) continue;
 
     for (let i = 0; i < parts.length - 1; i += 1) {
       folders.add(`/${parts.slice(0, i + 1).join('/')}/`);
     }
 
-    if (entry.path.endsWith('/')) folders.add(entry.path);
+    if (normPath.endsWith('/')) folders.add(normPath);
   }
 
   return [...folders].sort();

@@ -1,7 +1,9 @@
-const { app, BrowserWindow, ipcMain, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, protocol, net, nativeImage } = require('electron');
 const path = require('path');
 
 const isDev = !app.isPackaged;
+
+const appIconPath = path.join(__dirname, 'assets', 'icon.png');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -10,11 +12,19 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'TeleVault',
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^(https?:|mailto:)/i.test(url)) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   if (isDev) {
@@ -28,6 +38,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && app.dock && require('fs').existsSync(appIconPath)) {
+    const iconImage = nativeImage.createFromPath(appIconPath);
+    if (!iconImage.isEmpty()) {
+      app.dock.setIcon(iconImage);
+    }
+  }
+
   protocol.handle('tv-local', (request) => {
     const filePath = request.url.slice('tv-local://'.length);
     return net.fetch('file://' + filePath);

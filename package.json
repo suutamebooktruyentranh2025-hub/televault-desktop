@@ -1,6 +1,6 @@
 {
   "name": "televault-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TeleVault — kho file cá nhân trên Telegram (desktop)",
   "main": "electron/main.js",
   "private": true,
@@ -16,6 +16,7 @@
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "prepare-native:mac": "node scripts/prepare-native.js darwin",
     "prepare-native:win": "node scripts/prepare-native.js win32",
+    "generate-icons": "node scripts/generate-icons.js",
     "electron:build": "vite build && electron-builder --publish never",
     "electron:build:mac": "npm run prepare-native:mac && vite build && COPYFILE_DISABLE=1 electron-builder --mac --publish never",
     "electron:build:win": "npm run prepare-native:win && vite build && electron-builder --win --publish never",
@@ -35,12 +36,14 @@
       "package.json"
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         "dmg"
       ]
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

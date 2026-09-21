@@ -36,8 +36,17 @@ export function useDashboard({ enabled = true, rangeDays = 30 } = {}) {
 
   useEffect(() => {
     if (!enabled || !vaultApi?.onChanged) return undefined;
-    const unsub = vaultApi.onChanged(() => void reload());
-    return unsub;
+    let timer = null;
+    const unsub = vaultApi.onChanged(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void reload();
+      }, 800);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsub();
+    };
   }, [enabled, reload]);
 
   return { stats, loading, error, reload };

@@ -59,7 +59,12 @@ test('Integration: GDriveSyncService handles rate limits and retries', async (t)
   
   // Check stats exposed
   const snapshot = service.getSnapshot();
+  assert.equal(snapshot.throttleInfo.concurrency, 1);
+  assert.equal(snapshot.throttleInfo.throttled, false);
+  assert.ok(snapshot.throttleInfo.stats);
+  // Keep legacy aliases for existing UI consumers.
   assert.equal(snapshot.throttleInfo.currentConcurrency, 1);
+  assert.equal(snapshot.throttleInfo.isThrottled, false);
   assert.ok(snapshot.throttleInfo.syncStats);
   assert.ok(snapshot.throttleInfo.apiStats);
 });

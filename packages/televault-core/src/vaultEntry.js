@@ -1,4 +1,5 @@
 /**
+ * @typedef {{ messageId: number, offset: number, size: number }} VaultPart
  * @typedef {Object} VaultEntry
  * @property {number} messageId
  * @property {string} path - File: '/a/b.pdf'. Dir marker: '/a/b/'.
@@ -7,11 +8,21 @@
  * @property {Date} mtime
  * @property {string[]} tags
  * @property {string|null} [localPath]
+ * @property {VaultPart[]|null} [parts] - Multi-part file shards (caption v2)
  */
 
 /** @returns {VaultEntry} */
-function createVaultEntry({ messageId, path, size, sha256, mtime, tags = [], localPath = null }) {
-  return { messageId, path, size, sha256, mtime, tags, localPath };
+function createVaultEntry({
+  messageId,
+  path,
+  size,
+  sha256,
+  mtime,
+  tags = [],
+  localPath = null,
+  parts = null,
+}) {
+  return { messageId, path, size, sha256, mtime, tags, localPath, parts };
 }
 
 /** @returns {VaultEntry} */
@@ -48,7 +59,7 @@ function entryParent(entry) {
 }
 
 /** @param {VaultEntry} entry */
-function copyEntry(entry, { path, tags, localPath, messageId } = {}) {
+function copyEntry(entry, { path, tags, localPath, messageId, parts } = {}) {
   return createVaultEntry({
     messageId: messageId ?? entry.messageId,
     path: path ?? entry.path,
@@ -57,6 +68,7 @@ function copyEntry(entry, { path, tags, localPath, messageId } = {}) {
     mtime: entry.mtime,
     tags: tags ?? entry.tags,
     localPath: localPath ?? entry.localPath,
+    parts: parts !== undefined ? parts : entry.parts ?? null,
   });
 }
 

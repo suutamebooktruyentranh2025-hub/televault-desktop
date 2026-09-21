@@ -1,10 +1,17 @@
 const { bootstrapTelegram } = require('./bootstrap');
 const { createInteractiveAuth } = require('./authService');
 const { ChannelService } = require('./channelService');
+const { wrapClientWithFloodRetry, FloodWaitError } = require('./floodRetry');
 const { TransferQueue } = require('../transfer/transferQueue');
 const { VaultService } = require('../vault/vaultService');
 const { SharedVaultManager } = require('../vault/sharedVaultManager');
-const { broadcastVaultChanged, broadcastTransfersChanged, broadcastSharedVaultsChanged } = require('../ipc/vaultHandlers');
+
+const {
+  broadcastVaultChanged,
+  broadcastTransfersChanged,
+  broadcastSharedVaultsChanged,
+  broadcastMoveProgress,
+} = require('../ipc/vaultHandlers');
 
 class TelegramCoordinator {
   /**
@@ -44,6 +51,8 @@ class TelegramCoordinator {
     this.scannedCount = 0;
     this.entryCount = 0;
     this.bootError = null;
+    /** Seconds remaining for Telegram flood wait; 0 when not waiting. */
+    this.floodWaitSec = 0;
     this._booting = false;
     this._syncGen = 0;
     this._loginEpoch = 0;
@@ -52,6 +61,37 @@ class TelegramCoordinator {
     this.sharedVaults = null;
     /** @type {Promise<void>} */
     this._lifecycle = Promise.resolve();
+    this._floodInterval = null;
+  }
+
+  setFloodWait(waitSec) {
+    if (this._floodInterval) {
+      clearInterval(this._floodInterval);
+      this._floodInterval = null;
+    }
+    this.floodWaitSec = Math.max(0, waitSec);
+    this.onChange();
+
+    if (this.floodWaitSec > 0) {
+      this._floodInterval = setInterval(() => {
+        this.floodWaitSec = Math.max(0, this.floodWaitSec - 1);
+        this.onChange();
+        if (this.floodWaitSec <= 0) {
+          this.clearFloodWait();
+        }
+      }, 1000);
+    }
+  }
+
+  clearFloodWait() {
+    if (this._floodInterval) {
+      clearInterval(this._floodInterval);
+      this._floodInterval = null;
+    }
+    if (this.floodWaitSec !== 0) {
+      this.floodWaitSec = 0;
+      this.onChange();
+    }
   }
 
   isActive() {
@@ -74,10 +114,65 @@ class TelegramCoordinator {
       scannedCount: this.scannedCount,
       entryCount: this.entryCount,
       bootError: this.bootError,
+      floodWaitSec: this.floodWaitSec,
       booting: this._booting,
       syncComplete: this.syncComplete,
       sharedVaults: this.sharedVaults?.getDiscoveredVaults() || [],
     };
+  }
+
+  async checkAccountStatus() {
+    if (!this.client || this.authState !== 'ready') {
+      return {
+        connected: false,
+        floodWaitSec: this.floodWaitSec,
+        restrictionReason: null,
+        isPremium: false,
+        canPostMessages: false,
+        status: 'disconnected',
+      };
+    }
+    try {
+      const me = await this.client.invoke({ _: 'getMe' });
+      const restrictionReason = me.restriction_reason || null;
+      const isPremium = Boolean(me.is_premium);
+      let canPostMessages = true;
+      if (this.chatId) {
+        try {
+          const member = await this.client.invoke({
+            _: 'getChatMember',
+            chat_id: this.chatId,
+            member_id: { _: 'messageSenderUser', user_id: me.id },
+          });
+          const memberStatus = member?.status?._;
+          if (memberStatus === 'chatMemberStatusBanned' || memberStatus === 'chatMemberStatusLeft') {
+            canPostMessages = false;
+          } else if (memberStatus === 'chatMemberStatusRestricted') {
+            canPostMessages = Boolean(member.status.permissions?.can_send_basic_messages !== false);
+          }
+        } catch {
+          // ignore chat member check errors if chat not resolved yet
+        }
+      }
+      return {
+        connected: true,
+        floodWaitSec: this.floodWaitSec,
+        restrictionReason,
+        isPremium,
+        canPostMessages,
+        status: this.floodWaitSec > 0 ? 'flood_wait' : (restrictionReason || !canPostMessages) ? 'restricted' : 'ok',
+      };
+    } catch (err) {
+      return {
+        connected: false,
+        floodWaitSec: this.floodWaitSec,
+        restrictionReason: null,
+        isPremium: false,
+        canPostMessages: false,
+        error: String(err?.message || err),
+        status: 'error',
+      };
+    }
   }
 
   async shutdown() {
@@ -86,6 +181,8 @@ class TelegramCoordinator {
 
   async _shutdownInternal() {
     this._syncGen += 1;
+    this.clearFloodWait();
+    this.vault?.cancelJournalResume({ prune: false });
     this.channel?.dispose();
     this.channel = null;
     this.vault = null;
@@ -110,6 +207,7 @@ class TelegramCoordinator {
     this.authDetail = {};
     this.scannedCount = 0;
     this.entryCount = 0;
+    this.floodWaitSec = 0;
     this.syncComplete = false;
     this.onChange();
   }
@@ -149,17 +247,30 @@ class TelegramCoordinator {
         apiId: creds.apiId,
         apiHash: creds.apiHash,
       });
-      this.client = boot.client;
+      this.client = wrapClientWithFloodRetry(boot.client, {
+        onWait: ({ waitSec }) => {
+          this.setFloodWait(waitSec);
+        },
+        onResume: () => {
+          this.clearFloodWait();
+        },
+      });
       this.db = boot.db;
 
       this.auth = createInteractiveAuth(boot.client, (state, detail) => {
         this.authState = state;
         this.authDetail = detail || this.auth?.authDetail || {};
         if (state === 'ready') {
+          void this.client.invoke({
+            _: 'setNetworkType',
+            type: { _: 'networkTypeWiFi' },
+          }).catch((err) => console.warn('[TelegramCoordinator] setNetworkType error:', err?.message || err));
           void this.client.invoke({ _: 'getMe' }).then(me => {
             const name = [me.first_name, me.last_name].filter(Boolean).join(' ') || 'User';
             const phone = me.phone_number ? '+' + me.phone_number : '';
-            this.onAccountInfo?.({ name, phone });
+            const restrictionReason = me.restriction_reason || null;
+            const isPremium = Boolean(me.is_premium);
+            this.onAccountInfo?.({ name, phone, restrictionReason, isPremium });
           }).catch(err => console.error('[TelegramCoordinator] getMe error', err));
           this._enqueue(() => this._runSync());
         } else if (state === 'waitPassword' || state.startsWith('wait')) {
@@ -189,6 +300,7 @@ class TelegramCoordinator {
     this.syncError = null;
     this.syncComplete = false;
     this.scannedCount = 0;
+    this.floodWaitSec = 0;
     this.onChange();
 
     try {
@@ -203,6 +315,9 @@ class TelegramCoordinator {
         throw new Error(`resolveVaultChatId failed: ${e.message}`);
       }
       
+      if (gen !== this._syncGen) return;
+
+      await ch.sweepStuckSendingMessages(chatId);
       if (gen !== this._syncGen) return;
 
       ch.listenUpdates(chatId);
@@ -243,10 +358,9 @@ class TelegramCoordinator {
           this.onChange();
         },
       });
-      this.sharedVaults = new SharedVaultManager(this.client, this.db);
       try {
-        await this.vault.resumePendingJournal();
-        await this.vault.resolveConflictsNow();
+        // Local-only: ~1600 remote caption edits would flood Telegram and freeze boot.
+        await this.vault.resolveConflictsNow({ syncRemote: false });
         await this.vault.restorePendingTransfers({ autoStart: this.db.getAutoResumeTransfers() });
       } catch (e) {
         throw new Error(`vault initialization failed: ${e.message}`);
@@ -265,10 +379,10 @@ class TelegramCoordinator {
       });
       this.entryCount = this.db.listVisibleFileCount();
       this.syncComplete = true;
+      this.floodWaitSec = 0;
       this.onChange();
-      if (this.onSyncReady) this.onSyncReady();
 
-      // Discover shared vaults after own vault is ready
+      // Discover shared vaults before onSyncReady so GDrive can target them.
       try {
         this.sharedVaults = new SharedVaultManager({
           client: this.client,
@@ -283,12 +397,78 @@ class TelegramCoordinator {
       } catch (e) {
         console.error('[TeleVault shared-vault discover]', e);
       }
+
+      if (this.onSyncReady) this.onSyncReady();
+
+      // Resume pending journal operations in background without blocking boot.
+      void this._startBackgroundJournalResume(gen);
     } catch (e) {
       if (gen !== this._syncGen) return;
       this.syncError = formatAuthError(e);
       this.syncComplete = false;
+      this.floodWaitSec = 0;
       console.error('[TeleVault sync]', e);
       this.onChange();
+    }
+  }
+
+  async _startBackgroundJournalResume(gen) {
+    if (!this.vault || !this.db) return;
+    const pending = this.db.journalPending();
+    if (!pending || pending.length === 0) return;
+
+    console.log(`[TeleVault] Resuming ${pending.length} pending journal operations in background...`);
+
+    broadcastMoveProgress({
+      active: true,
+      phase: 'resuming',
+      current: 0,
+      total: pending.length,
+      name: '',
+    });
+
+    try {
+      const result = await this.vault.resumePendingJournal((progress) => {
+        if (gen !== this._syncGen) return;
+        broadcastMoveProgress({
+          ...progress,
+          active: true,
+          phase: 'resuming',
+        });
+      });
+
+      if (gen !== this._syncGen) return;
+
+      broadcastMoveProgress({
+        active: false,
+        phase: 'resuming',
+        completed: Boolean(result?.ok),
+        cancelled: Boolean(result?.cancelled),
+        current: result?.completed || 0,
+        total: result?.total || 0,
+      });
+      broadcastVaultChanged();
+    } catch (e) {
+      if (gen !== this._syncGen) return;
+      if (e instanceof FloodWaitError || e.name === 'FloodWaitError' || e.code === 429) {
+        const waitSec = e.waitSec || 60;
+        this.setFloodWait(waitSec);
+        console.warn(`[TeleVault] Background journal paused due to Telegram rate limit (FLOOD_WAIT_${waitSec})`);
+        broadcastMoveProgress({
+          active: false,
+          paused: true,
+          waitSec,
+          phase: 'resuming',
+          error: `Telegram tạm giới hạn tốc độ (chờ ${waitSec}s)`,
+        });
+        return;
+      }
+      console.warn('[TeleVault background journal resume warning]:', e.message);
+      broadcastMoveProgress({
+        active: false,
+        phase: 'resuming',
+        error: String(e.message || e),
+      });
     }
   }
 

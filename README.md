@@ -17,7 +17,7 @@ TeleVault là một ứng dụng desktop mạnh mẽ dựa trên Electron, giúp
 - **Hàng đợi Truyền tải**: Upload/Download chạy ngầm bất đồng bộ đáng tin cậy với khả năng theo dõi tiến trình, tự động tiếp tục và hỗ trợ hủy tác vụ.
 - **Đa tài khoản**: Đăng nhập và chuyển đổi mượt mà giữa nhiều tài khoản Telegram.
 - **Tags & Thùng rác**: Phân loại file với các tag màu sắc và quản lý file đã xóa trong Thùng rác.
-- **Đồng bộ Google Drive**: Hỗ trợ đồng bộ hóa hai chiều và chỉ-upload với tích hợp Google Drive.
+- **Đồng bộ Google Drive một chiều (Drive → TeleVault, chỉ đọc).**
 - **Giao diện tuyệt đẹp**: Hỗ trợ Dark Mode/Light Mode, giao diện tiếng Việt & tiếng Anh, và các component React mượt mà tối ưu.
 
 ### Công nghệ sử dụng (Tech Stack)
@@ -91,7 +91,7 @@ TeleVault is a powerful Electron-based desktop application that transforms your 
 - **Transfers Queue**: Reliable async background uploads/downloads with progress tracking, auto-resume, and cancellation support.
 - **Multi-Account**: Seamlessly log in and switch between multiple Telegram accounts.
 - **Tags & Trash**: Organize your files with colorful tags and a dedicated Trash bin.
-- **Google Drive Sync**: Two-way and upload-only sync with Google Drive integration.
+- **One-way Google Drive sync (Drive → TeleVault, read-only).**
 - **Beautiful UI/UX**: Dark Mode/Light Mode, Vietnamese & English localization, and smooth responsive React interface.
 
 ### Tech Stack

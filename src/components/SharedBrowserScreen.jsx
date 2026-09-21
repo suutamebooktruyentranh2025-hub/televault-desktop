@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatDate, formatSize } from '../utils/format';
+import { formatFolderSummary } from '../utils/folderSummary';
 import { useI18n } from '../context/I18nContext';
 import { ContextMenu } from './ContextMenu';
 import { DriveSelectionBar } from './DriveSelectionBar';
@@ -38,9 +39,48 @@ function SortHeader({ active, direction, onClick, children }) {
   );
 }
 
+function formatFolderItemCount(folder, t) {
+  if (!folder) return null;
+  const folderCount = folder.folderCount ?? 0;
+  const fileCount = folder.fileCount ?? 0;
+  const totalFiles = folder.totalFiles ?? fileCount;
+
+  if (folderCount === 0 && fileCount === 0 && totalFiles === 0) {
+    return t('folderItemCountEmpty');
+  }
+
+  const parts = [];
+  if (folderCount > 0) {
+    parts.push(t('folderCountLabel', { n: folderCount }));
+  }
+  if (fileCount > 0) {
+    parts.push(t('fileCountLabel', { n: fileCount }));
+  } else if (totalFiles > 0) {
+    parts.push(`(${t('fileCountLabel', { n: totalFiles })})`);
+  }
+
+  return parts.join(', ');
+}
+
+function formatFolderTooltip(folder, t) {
+  if (!folder) return '';
+  const folderCount = folder.folderCount ?? 0;
+  const totalFolders = folder.totalFolders ?? folderCount;
+  const fileCount = folder.fileCount ?? 0;
+  const totalFiles = folder.totalFiles ?? fileCount;
+
+  return `${folder.name}\n${t('folderItemCountDetail', {
+    folderCount,
+    totalFolders,
+    fileCount,
+    totalFiles,
+  })}`;
+}
+
 export function SharedBrowserScreen({
   folders,
   files,
+  currentFolderCounts,
   loading,
   sortField,
   sortDirection,
@@ -65,6 +105,12 @@ export function SharedBrowserScreen({
   const { t } = useI18n();
   const [menu, setMenu] = useState(null);
   const clickTimerRef = useRef(null);
+  const folderSummary = formatFolderSummary({
+    folders: displayedFolders,
+    files: displayedFiles,
+    counts: currentFolderCounts,
+    t,
+  });
 
   const displayedFiles = files || [];
   const displayedFolders = folders || [];
@@ -189,6 +235,7 @@ export function SharedBrowserScreen({
         {selectionCount > 0 ? (
           <DriveSelectionBar
             count={selectionCount}
+            isTrash={false}
             canDownload={canDownloadSelection}
             canTrash={false}
             canMove={false}
@@ -198,12 +245,17 @@ export function SharedBrowserScreen({
             onDownload={onDownloadSelected}
           />
         ) : (
-          <div />
+          <div
+            className="flex items-center gap-2 text-xs font-medium text-[var(--gd-text-secondary)] select-none"
+            title={folderSummary.tooltip}
+          >
+            <span>{folderSummary.text}</span>
+          </div>
         )}
       </div>
 
       <div className={`min-h-0 flex-1 overflow-auto px-2 pb-4 ${selectionCount > 0 ? 'gd-list-has-selection' : ''}`}>
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full table-fixed border-collapse text-sm">
           <thead>
             <tr className="border-b border-[var(--gd-border)] text-left text-xs font-medium text-[var(--gd-text-secondary)]">
               <th className="w-12 px-3 py-2" />
@@ -212,12 +264,12 @@ export function SharedBrowserScreen({
                   {t('colName')}
                 </SortHeader>
               </th>
-              <th className="hidden px-3 py-2 md:table-cell">
+              <th className="hidden w-52 px-3 py-2 md:table-cell whitespace-nowrap">
                 <SortHeader active={sortField === 'mtime'} direction={sortDirection} onClick={() => onToggleSort?.('mtime')}>
                   {t('colModified')}
                 </SortHeader>
               </th>
-              <th className="hidden w-28 px-3 py-2 sm:table-cell">
+              <th className="hidden w-28 px-3 py-2 sm:table-cell whitespace-nowrap">
                 <SortHeader active={sortField === 'size'} direction={sortDirection} onClick={() => onToggleSort?.('size')}>
                   {t('colSize')}
                 </SortHeader>
@@ -229,6 +281,8 @@ export function SharedBrowserScreen({
             {displayedFolders.map((folder) => {
               const key = `folder:${currentFolder}${folder.name}/`;
               const selected = selectedFolders?.has(key) || false;
+              const countText = formatFolderItemCount(folder, t);
+              const tooltipText = formatFolderTooltip(folder, t);
               return (
                 <tr
                   key={key}
@@ -237,7 +291,7 @@ export function SharedBrowserScreen({
                   onClick={(e) => handleItemClick(e, key)}
                   onDoubleClick={() => handleOpen(() => onOpenFolder?.(folder.name))}
                 >
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <td className="w-12 px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       className="gd-row-checkbox"
@@ -245,20 +299,29 @@ export function SharedBrowserScreen({
                       onChange={() => onToggleFolderSelect?.(folder.name)}
                     />
                   </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-3">
+                  <td className="px-3 py-2.5 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0">
                       <IconFolder className="h-6 w-6 shrink-0" />
                       <span
                         className={`truncate ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
+                        title={tooltipText}
                       >
                         {folder.name}
                       </span>
+                      {countText && (
+                        <span
+                          className="shrink-0 rounded-full bg-[var(--gd-border)]/40 px-2 py-0.5 text-[11px] font-normal text-[var(--gd-text-secondary)]"
+                          title={tooltipText}
+                        >
+                          {countText}
+                        </span>
+                      )}
                     </div>
                   </td>
-                  <td className="hidden px-3 py-3 text-[var(--gd-text-secondary)] md:table-cell">
+                  <td className="hidden w-52 px-3 py-2.5 text-[var(--gd-text-secondary)] md:table-cell whitespace-nowrap">
                     {formatDate(folder.mtime)}
                   </td>
-                  <td className="hidden px-3 py-3 text-[var(--gd-text-secondary)] sm:table-cell">
+                  <td className="hidden w-28 px-3 py-2.5 text-[var(--gd-text-secondary)] sm:table-cell whitespace-nowrap">
                     {folder.size > 0 ? formatSize(folder.size) : '—'}
                   </td>
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
@@ -281,7 +344,7 @@ export function SharedBrowserScreen({
                   onDoubleClick={() => handleOpen(() => onOpenFile?.(file))}
                   onContextMenu={(e) => showFileMenu(e, file)}
                 >
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <td className="w-12 px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       className="gd-row-checkbox"
@@ -290,20 +353,21 @@ export function SharedBrowserScreen({
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-3">
+                  <td className="px-3 py-2.5 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0">
                       {fileTypeIcon(file.name, 'h-6 w-6 shrink-0')}
                       <span
                         className={`truncate ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
+                        title={file.name}
                       >
                         {file.name}
                       </span>
                     </div>
                   </td>
-                  <td className="hidden px-3 py-3 text-[var(--gd-text-secondary)] md:table-cell">
+                  <td className="hidden w-52 px-3 py-2.5 text-[var(--gd-text-secondary)] md:table-cell whitespace-nowrap">
                     {formatDate(file.mtime)}
                   </td>
-                  <td className="hidden px-3 py-3 text-[var(--gd-text-secondary)] sm:table-cell">
+                  <td className="hidden w-28 px-3 py-2.5 text-[var(--gd-text-secondary)] sm:table-cell whitespace-nowrap">
                     {formatSize(file.size)}
                   </td>
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
