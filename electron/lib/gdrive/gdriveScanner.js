@@ -151,15 +151,26 @@ const scannerMethods = {
       throw new Error('Đồng bộ Google Drive đang tạm dừng.');
     }
 
-    // Validate token freshness before starting scan; halt immediately if expired
+    this._activeAbortController = new AbortController();
+    this._syncInProgress = true;
+    this.status = 'syncing';
+    this.scanPhase = 'preparing';
+    this.scanInfo = { currentFolder: '/', filesFound: 0 };
+    this.lastError = null;
+    if (typeof this.onChange === 'function') this.onChange();
+
+    // Validate token freshness and proactively verify connection to Google Drive API
     try {
       if (typeof this.auth?.getValidToken === 'function') {
         await this.auth.getValidToken();
       }
+      if (typeof this.api?.getAbout === 'function') {
+        await this.api.getAbout();
+      }
     } catch (authErr) {
       const friendlyErr = isAuthError(authErr)
         ? FRIENDLY_AUTH_ERROR_MSG
-        : `Lỗi xác thực Google Drive: ${authErr?.message || authErr}`;
+        : `Lỗi kết nối Google Drive: ${authErr?.message || authErr}`;
       this.status = 'error';
       this.lastError = friendlyErr;
       this._syncInProgress = false;
@@ -179,7 +190,13 @@ const scannerMethods = {
     } catch {
       // Fallback handled
     }
-    if (!this._isLifecycleCurrent(captured_generation)) return;
+    if (!this._isLifecycleCurrent(captured_generation)) {
+      this._syncInProgress = false;
+      this.scanPhase = null;
+      this.scanInfo = null;
+      if (typeof this.onChange === 'function') this.onChange();
+      return;
+    }
 
     try {
       await this._awaitTelegramFloodClear({
@@ -190,7 +207,13 @@ const scannerMethods = {
     } catch {
       return;
     }
-    if (!this._isLifecycleCurrent(captured_generation)) return;
+    if (!this._isLifecycleCurrent(captured_generation)) {
+      this._syncInProgress = false;
+      this.scanPhase = null;
+      this.scanInfo = null;
+      if (typeof this.onChange === 'function') this.onChange();
+      return;
+    }
 
     // Stop all active queue workers and downloads immediately so scanning has exclusive access
     if (typeof this._stopActiveWorkersAndClaims === 'function') {
@@ -202,12 +225,6 @@ const scannerMethods = {
       this.pendingCount = this.db.gdriveSyncQueueCount();
       if (typeof this.onChange === 'function') this.onChange();
     }
-
-    this._activeAbortController = new AbortController();
-    this._syncInProgress = true;
-    this.status = 'syncing';
-    this.lastError = null;
-    if (typeof this.onChange === 'function') this.onChange();
 
     try {
       const subs = this.db.gdriveSubscriptionsAll().filter(s => s.enabled);
@@ -666,16 +683,6 @@ const scannerMethods = {
               filesToSync.splice(pending_index, 1);
             }
           }
-          if (this.db.gdriveStateGet('propagate_deletes', '0') !== '1') continue;
-          const drive_manifest = this.db.gdriveManifestGet(change.fileId);
-          if (!drive_manifest) continue;
-          const vault_entry = this._vaultEntries().find(
-            (entry_item) => entry_item.path === drive_manifest.vaultPath && !isInTrash(entry_item.path),
-          );
-          if (vault_entry) await this.vault.trashEntries([vault_entry.messageId]);
-          if (!this._isLifecycleCurrent(captured_generation)) return;
-          this.db.gdriveSyncQueueRemove(change.fileId);
-          this.db.gdriveManifestDelete(change.fileId);
           continue;
         }
         if (!change.file) continue;

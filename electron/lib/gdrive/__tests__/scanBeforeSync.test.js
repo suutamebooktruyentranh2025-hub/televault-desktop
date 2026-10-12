@@ -249,6 +249,40 @@ test('scanNow stops scanning and throws friendly error if session token has expi
   assert.ok(service.lastError.includes('hết hạn') || service.lastError.includes('Token refresh failed'));
 });
 
+test('scanNow proactively checks connection via api.getAbout and throws if failed', async () => {
+  const service = Object.create(GDriveSyncService.prototype);
+  let getAboutCalled = false;
+  service.auth = {
+    isConnected: () => true,
+    getValidToken: async () => 'valid_access_token',
+  };
+  service.api = {
+    getAbout: async () => {
+      getAboutCalled = true;
+      throw new Error('Token refresh failed: Bad Request');
+    },
+  };
+  service.isPaused = false;
+  service._syncInProgress = false;
+  service._lifecycleGeneration = 1;
+  service._isLifecycleCurrent = () => true;
+
+  await assert.rejects(
+    async () => {
+      await service.scanNow();
+    },
+    (err) => {
+      assert.ok(err.message.includes('hết hạn') || err.message.includes('Token refresh failed'));
+      return true;
+    }
+  );
+
+  assert.equal(getAboutCalled, true);
+  assert.equal(service.status, 'error');
+  assert.equal(service.scanPhase, null);
+  assert.equal(service._syncInProgress, false);
+});
+
 test('scanNow throws error and updates status if not connected', async () => {
   const service = Object.create(GDriveSyncService.prototype);
   service.auth = {

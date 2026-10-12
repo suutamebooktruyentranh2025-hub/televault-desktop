@@ -793,6 +793,21 @@ class VaultService {
       }
     }
 
+    const activeTask = this.queue?.tasks?.find(
+      (t) =>
+        t.kind === 'upload' &&
+        t.destPath === destPath &&
+        (t.status === 'queued' || t.status === 'running' || t.status === 'paused'),
+    );
+    if (activeTask) {
+      return {
+        skipped: true,
+        reason: 'already_queued',
+        task: activeTask,
+        done: activeTask._donePromise || Promise.resolve(),
+      };
+    }
+
     const label = path.basename(destPath);
     const persistId = this.db.transferAdd({
       kind: 'upload',
@@ -813,6 +828,8 @@ class VaultService {
       run: async (report, signal) => this._runUpload(localPath, destPath, report, signal, task),
     });
     const done = this.queue.add(task);
+    done.catch(() => {});
+    task._donePromise = done;
     return { skipped: false, task, done };
   }
 
@@ -913,6 +930,18 @@ class VaultService {
         this.onChange();
       }
       if (task) task.phase = 'done';
+    } catch (err) {
+      if (tempId != null && messageId == null) {
+        void this.client
+          .invoke({
+            _: 'deleteMessages',
+            chat_id: this.chatId,
+            message_ids: [tempId],
+            revoke: true,
+          })
+          .catch(() => {});
+      }
+      throw err;
     } finally {
       this.channel.clearUploadPath(destPath);
       if (tempId != null) this.channel.clearUploadPending(tempId, messageId);
@@ -998,6 +1027,7 @@ class VaultService {
             if (this._tdId(u.old_message_id) === tempMessageId) {
               const msg = /** @type {Record<string, unknown>} */ (u.message || {});
               realMessageId = this._tdId(msg.id);
+              uploadComplete = true;
               lastProgressAt = Date.now();
               tryFinish();
             }

@@ -43,46 +43,54 @@ function walkFilesEntries(dir, prefix = '') {
   return out;
 }
 
-function broadcastVaultChanged() {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('vault:changed');
+function safeSend(win, channel, ...args) {
+  try {
+    if (!win || typeof win.isDestroyed !== 'function' || win.isDestroyed()) return;
+    const wc = win.webContents;
+    if (!wc || typeof wc.isDestroyed !== 'function' || wc.isDestroyed()) return;
+    if (typeof wc.isCrashed === 'function' && wc.isCrashed()) return;
+    wc.send(channel, ...args);
+  } catch {
+    // Render frame was disposed before WebFrameMain could be accessed (e.g. reload, navigation, close)
   }
+}
+
+function safeBroadcast(channel, ...args) {
+  if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
+  for (const win of BrowserWindow.getAllWindows()) {
+    safeSend(win, channel, ...args);
+  }
+}
+
+function broadcastVaultChanged() {
+  safeBroadcast('vault:changed');
 }
 
 function broadcastTransfersChanged() {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('transfers:changed');
-  }
+  safeBroadcast('transfers:changed');
 }
 
 function broadcastSharedVaultsChanged() {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('sharedVault:changed');
-  }
+  safeBroadcast('sharedVault:changed');
 }
 
 function broadcastDeleteProgress(payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('vault:deleteProgress', payload);
-    }
-  }
+  safeBroadcast('vault:deleteProgress', payload);
 }
 
 function broadcastMoveProgress(payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('vault:moveProgress', payload);
-    }
-  }
+  safeBroadcast('vault:moveProgress', payload);
 }
 
 module.exports = {
   serializeEntry,
   walkFilesEntries,
+  safeSend,
+  safeBroadcast,
   broadcastVaultChanged,
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
   broadcastDeleteProgress,
   broadcastMoveProgress,
 };
+

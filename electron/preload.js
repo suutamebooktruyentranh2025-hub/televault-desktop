@@ -36,10 +36,12 @@ contextBridge.exposeInMainWorld('televault', {
     getDashboard: (rangeDays) => ipcRenderer.invoke('vault:getDashboard', { rangeDays }),
     getDayFiles: (date, limit) => ipcRenderer.invoke('vault:getDayFiles', { date, limit }),
     search: (query, tags) => ipcRenderer.invoke('vault:search', { query, tags }),
-    allTags: () => ipcRenderer.invoke('vault:allTags'),
+    allTags: (opts) => ipcRenderer.invoke('vault:allTags', opts),
     getFolderTags: (folderPath) => ipcRenderer.invoke('vault:getFolderTags', { folderPath }),
     allFolders: () => ipcRenderer.invoke('vault:allFolders'),
-    getFoldersDetails: (paths) => ipcRenderer.invoke('vault:getFoldersDetails', { paths }),
+    getFoldersDetails: (paths, opts) => ipcRenderer.invoke('vault:getFoldersDetails', { paths, ...(opts || {}) }),
+    getFlatStories: (opts) => ipcRenderer.invoke('vault:getFlatStories', opts),
+    getFlatFiles: (opts) => ipcRenderer.invoke('vault:getFlatFiles', opts),
     createFolder: (parentFolder, name) =>
       ipcRenderer.invoke('vault:createFolder', { parentFolder, name }),
     renameFile: (messageId, newName) =>
@@ -107,11 +109,19 @@ contextBridge.exposeInMainWorld('televault', {
       ipcRenderer.on('vault:moveProgress', listener);
       return () => ipcRenderer.removeListener('vault:moveProgress', listener);
     },
+    rescanHistory: (opts) => ipcRenderer.invoke('vault:rescanHistory', opts),
+    cancelRescan: () => ipcRenderer.invoke('vault:cancelRescan'),
+    onScanProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('vault:scanProgress', listener);
+      return () => ipcRenderer.removeListener('vault:scanProgress', listener);
+    },
   },
   sharedVault: {
     discover: () => ipcRenderer.invoke('sharedVault:discover'),
     list: () => ipcRenderer.invoke('sharedVault:list'),
     scan: (chatId) => ipcRenderer.invoke('sharedVault:scan', { chatId }),
+    rescan: (chatId) => ipcRenderer.invoke('vault:rescanHistory', { chatId }),
     getListing: (chatId, folder, sortField, sortDirection) =>
       ipcRenderer.invoke('sharedVault:getListing', { chatId, folder, sortField, sortDirection }),
     search: (chatId, query) => ipcRenderer.invoke('sharedVault:search', { chatId, query }),
@@ -155,7 +165,7 @@ contextBridge.exposeInMainWorld('televault', {
     saveCredentials: (clientId, clientSecret) => ipcRenderer.invoke('gdrive:saveCredentials', { clientId, clientSecret }),
     connect: (clientId, clientSecret) => ipcRenderer.invoke('gdrive:connect', { clientId, clientSecret }),
     cancelConnect: () => ipcRenderer.invoke('gdrive:cancelConnect'),
-    disconnect: () => ipcRenderer.invoke('gdrive:disconnect'),
+    disconnect: (opts) => ipcRenderer.invoke('gdrive:disconnect', opts),
     setPaused: (paused) => ipcRenderer.invoke('gdrive:setPaused', { paused }),
     listFolder: (folderId) => ipcRenderer.invoke('gdrive:listFolder', { folderId }),
     addSubscription: (sub) => ipcRenderer.invoke('gdrive:addSubscription', sub),

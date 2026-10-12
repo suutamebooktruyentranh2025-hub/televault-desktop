@@ -1,4 +1,5 @@
 const { dialog, BrowserWindow } = require('electron');
+const { safeBroadcast } = require('./vaultHandlers');
 
 /**
  * @param {import('electron').IpcMain} ipcMain
@@ -12,9 +13,7 @@ function registerSyncHandlers(ipcMain, ctx) {
   function broadcastSyncChanged() {
     const sync = ctx.getSyncService();
     const snapshot = sync ? sync.getSnapshot() : null;
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('sync:changed', snapshot);
-    }
+    safeBroadcast('sync:changed', snapshot);
   }
 
   ipcMain.handle('sync:getConfig', () => {

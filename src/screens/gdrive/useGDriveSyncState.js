@@ -40,7 +40,6 @@ export function useGDriveSyncState() {
   const [gdriveAllowedExtensions, setGdriveAllowedExtensions] = useState('');
   const [gdriveTempDir, setGdriveTempDir] = useState('');
   const [gdriveConflictPolicy, setGdriveConflictPolicy] = useState('skip');
-  const [gdrivePropagateDeletes, setGdrivePropagateDeletes] = useState(false);
   const [autoSyncAfterScan, setAutoSyncAfterScan] = useState(true);
   const [syncTargetChatId, setSyncTargetChatId] = useState('');
   const [syncTargets, setSyncTargets] = useState([]);
@@ -68,6 +67,7 @@ export function useGDriveSyncState() {
   const lastSelectedErrorRef = useRef(null);
   const lastSelectedHistoryRef = useRef(null);
   const prevScanPhaseRef = useRef(null);
+  const scanActiveRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -97,7 +97,6 @@ export function useGDriveSyncState() {
         setGdriveAllowedExtensions(gdStatus.allowedExtensions || '');
         setGdriveTempDir(gdStatus.tempDownloadDir || '');
         setGdriveConflictPolicy(gdStatus.conflictPolicy || 'skip');
-        setGdrivePropagateDeletes(gdStatus.propagateDeletes === true);
         setAutoSyncAfterScan(gdStatus.autoSyncAfterScan !== false);
         setSyncTargetChatId(gdStatus.syncTargetChatId || '');
         setGdriveErrors(gdStatus.syncErrors || []);
@@ -173,7 +172,6 @@ export function useGDriveSyncState() {
         setGdriveAllowedExtensions(snapshot.allowedExtensions || '');
         setGdriveTempDir(snapshot.tempDownloadDir || '');
         setGdriveConflictPolicy(snapshot.conflictPolicy || 'skip');
-        setGdrivePropagateDeletes(snapshot.propagateDeletes === true);
         if (snapshot.autoSyncAfterScan !== undefined) setAutoSyncAfterScan(snapshot.autoSyncAfterScan !== false);
         setSyncTargetChatId(snapshot.syncTargetChatId || '');
         setGdriveErrors(snapshot.syncErrors || []);
@@ -183,11 +181,14 @@ export function useGDriveSyncState() {
         if (snapshot.clientId !== undefined) setGdriveClientId(snapshot.clientId || '');
         if (snapshot.clientSecret !== undefined) setGdriveClientSecret(snapshot.clientSecret || '');
         const currentPhase = snapshot.scanPhase || null;
-        const wasScanning = Boolean(prevScanPhaseRef.current);
+        if (currentPhase) {
+          scanActiveRef.current = true;
+        }
         prevScanPhaseRef.current = currentPhase;
 
         // Detect background scan completion
-        if (wasScanning && !currentPhase) {
+        if (scanActiveRef.current && !currentPhase) {
+          scanActiveRef.current = false;
           setScanBusy(false);
           if (snapshot.lastError) {
             showToast(snapshot.lastError, { variant: 'error' });
@@ -281,9 +282,13 @@ export function useGDriveSyncState() {
     await window.televault?.gdrive?.cancelConnect?.();
   }
 
-  async function disconnectGDrive() {
-    await window.televault?.gdrive?.disconnect();
+  async function disconnectGDrive(opts) {
+    await window.televault?.gdrive?.disconnect(opts);
   }
+
+  const handleReconnect = useCallback(async () => {
+    await disconnectGDrive();
+  }, []);
 
   async function toggleSub(driveId, enabled) {
     await window.televault?.gdrive?.toggleSubscription(driveId, enabled);
@@ -338,14 +343,6 @@ export function useGDriveSyncState() {
     }
   }
 
-  async function handlePropagateDeletesChange(enabled) {
-    setGdrivePropagateDeletes(enabled);
-    const save_result = await window.televault?.gdrive?.setPropagateDeletes(enabled);
-    if (!save_result?.ok) {
-      showToast(t('gdrivePropagateDeletesSaveError'), { variant: 'error' });
-      await load();
-    }
-  }
 
   async function handleCheckConnection() {
     if (checkConnBusy) return;
@@ -369,25 +366,30 @@ export function useGDriveSyncState() {
   async function handleScanNow() {
     if (scanBusy || Boolean(gdriveScanPhase)) return;
     setScanBusy(true);
+    scanActiveRef.current = true;
     setLiveScannedItems([]);
     try {
       const res = await window.televault?.gdrive?.scanNow?.({ forceIndex: true });
       if (res && !res.ok) {
+        scanActiveRef.current = false;
+        setScanBusy(false);
         if (!res.error?.toLowerCase().includes('abort')) {
           showToast(res.error || t('gdriveScanError'), { variant: 'error' });
         }
-        setScanBusy(false);
       }
     } catch (err) {
+      scanActiveRef.current = false;
+      setScanBusy(false);
       if (!String(err?.message || err).toLowerCase().includes('abort')) {
         showToast(String(err?.message || err) || t('gdriveScanError'), { variant: 'error' });
       }
-      setScanBusy(false);
     }
   }
 
   async function handleAbortScan() {
     try {
+      scanActiveRef.current = false;
+      setScanBusy(false);
       await window.televault?.gdrive?.abortScan?.();
       showToast(t('gdriveToastScanStopped'), { variant: 'info' });
       await load();
@@ -634,7 +636,6 @@ export function useGDriveSyncState() {
     gdriveTempDir,
     setGdriveTempDir,
     gdriveConflictPolicy,
-    gdrivePropagateDeletes,
     autoSyncAfterScan,
     syncTargetChatId,
     syncTargets,
@@ -668,13 +669,13 @@ export function useGDriveSyncState() {
     gdriveConnecting,
     gdriveAuthUrl,
     disconnectGDrive,
+    handleReconnect,
     toggleSub,
     removeSub,
     handlePollIntervalChange,
     handleConflictPolicyChange,
     handleSyncTargetChange,
     handleRescanSyncTargetVault,
-    handlePropagateDeletesChange,
     handleAutoSyncAfterScanChange,
     checkConnBusy,
     handleCheckConnection,

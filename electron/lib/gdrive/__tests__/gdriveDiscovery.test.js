@@ -167,7 +167,6 @@ test('poll does not enqueue an update deleted later in the same batch', async ()
   const removed_items = [];
   const state_values = new Map([
     ['changes_page_token', 'token1'],
-    ['propagate_deletes', '1'],
   ]);
   const sync_service = Object.create(GDriveSyncService.prototype);
   sync_service._syncInProgress = false;
@@ -225,112 +224,12 @@ test('poll does not enqueue an update deleted later in the same batch', async ()
   await sync_service._runPollSync();
 
   assert.deepEqual(queued_items, []);
-  assert.deepEqual(removed_items, ['file9']);
+  assert.deepEqual(removed_items, []);
   assert.equal(sync_service.totalCount, 0);
   assert.equal(state_values.get('changes_page_token'), 'token2');
 });
 
-for (const deleted_change of [
-  { fileId: 'file9', removed: true },
-  { fileId: 'file9', removed: false, file: { trashed: true } },
-]) {
-  test(`poll soft-trashes the vault entry for ${deleted_change.removed ? 'removed' : 'trashed'} Drive files when enabled`, async () => {
-    const trashed_batches = [];
-    const deleted_manifests = [];
-    const removed_queue_items = [];
-    const cleanup_actions = [];
-    const state_values = new Map([
-      ['changes_page_token', 'token1'],
-      ['propagate_deletes', '1'],
-    ]);
-    const sync_service = Object.create(GDriveSyncService.prototype);
-    sync_service._syncInProgress = false;
-    sync_service.status = 'idle';
-    sync_service.lastError = null;
-    sync_service.lastSyncAt = null;
-    sync_service.pendingCount = 0;
-    sync_service.totalCount = 0;
-    sync_service.auth = { isConnected: () => true };
-    sync_service.onChange = () => {};
-    sync_service.api = {
-      getChanges: async () => ({
-        changes: [deleted_change],
-        newStartPageToken: 'token2',
-      }),
-    };
-    sync_service.vault = {
-      trashEntries: async (message_ids) => trashed_batches.push(message_ids),
-    };
-    sync_service.db = {
-      gdriveStateGet: (state_key, default_value) => state_values.get(state_key) ?? default_value,
-      gdriveStateSet: (state_key, state_value) => state_values.set(state_key, state_value),
-      gdriveSubscriptionsAll: () => [],
-      gdriveManifestGet: () => ({ driveFileId: 'file9', vaultPath: '/GDrive/Docs/old.pdf' }),
-      gdriveManifestDelete: (drive_file_id) => {
-        cleanup_actions.push('manifest-delete');
-        deleted_manifests.push(drive_file_id);
-      },
-      gdriveSyncQueueRemove: (drive_file_id) => {
-        cleanup_actions.push('queue-remove');
-        removed_queue_items.push(drive_file_id);
-      },
-      gdriveSyncQueueCount: () => 0,
-      getAll: () => [
-        { messageId: 42, path: '/GDrive/Docs/old.pdf' },
-        { messageId: 84, path: '/Rác/GDrive/Docs/old.pdf' },
-      ],
-    };
 
-    await sync_service._runPollSync();
-
-    assert.deepEqual(trashed_batches, [[42]]);
-    assert.deepEqual(deleted_manifests, ['file9']);
-    assert.deepEqual(removed_queue_items, ['file9']);
-    assert.deepEqual(cleanup_actions, ['queue-remove', 'manifest-delete']);
-  });
-}
-
-test('poll does not advance the changes token when delete propagation fails', async () => {
-  const state_values = new Map([
-    ['changes_page_token', 'token1'],
-    ['propagate_deletes', '1'],
-  ]);
-  const sync_service = Object.create(GDriveSyncService.prototype);
-  sync_service._syncInProgress = false;
-  sync_service.status = 'idle';
-  sync_service.lastError = null;
-  sync_service.lastSyncAt = null;
-  sync_service.pendingCount = 0;
-  sync_service.totalCount = 0;
-  sync_service.auth = { isConnected: () => true };
-  sync_service.onChange = () => {};
-  sync_service.api = {
-    getChanges: async () => ({
-      changes: [{ fileId: 'file9', removed: true }],
-      newStartPageToken: 'token2',
-    }),
-  };
-  sync_service.vault = {
-    trashEntries: async () => {
-      throw new Error('trash failed');
-    },
-  };
-  sync_service.db = {
-    gdriveStateGet: (state_key, default_value) => state_values.get(state_key) ?? default_value,
-    gdriveStateSet: (state_key, state_value) => state_values.set(state_key, state_value),
-    gdriveSubscriptionsAll: () => [],
-    gdriveManifestGet: () => ({ driveFileId: 'file9', vaultPath: '/GDrive/Docs/old.pdf' }),
-    gdriveManifestDelete: () => {},
-    gdriveSyncQueueRemove: () => {},
-    gdriveSyncQueueCount: () => 0,
-    getAll: () => [{ messageId: 42, path: '/GDrive/Docs/old.pdf' }],
-  };
-
-  await sync_service._runPollSync();
-
-  assert.equal(sync_service.status, 'error');
-  assert.equal(state_values.get('changes_page_token'), 'token1');
-});
 
 test('poll leaves vault, manifest, and queue unchanged when delete propagation is disabled', async () => {
   const recorded_actions = [];

@@ -1279,14 +1279,15 @@ body,
   position: relative;
   width: 36px;
   height: 20px;
+  flex-shrink: 0;
   border: none;
   border-radius: 10px;
-  background: #dadce0;
+  background-color: #dadce0 !important;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background-color 0.2s;
 }
 .gd-settings-toggle[aria-checked='true'] {
-  background: var(--gd-primary);
+  background-color: var(--gd-primary) !important;
 }
 .gd-settings-toggle-thumb {
   position: absolute;

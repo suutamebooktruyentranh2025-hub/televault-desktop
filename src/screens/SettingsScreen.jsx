@@ -19,10 +19,17 @@ function SettingsToggle({ checked, onChange, label }) {
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      className="gd-settings-toggle"
       onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-[var(--gd-primary)]/40 focus:ring-offset-1 ${
+        checked ? 'bg-[var(--gd-primary)]' : 'bg-zinc-300 dark:bg-zinc-600'
+      }`}
     >
-      <span className="gd-settings-toggle-thumb" />
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+          checked ? 'translate-x-[18px]' : 'translate-x-[2px]'
+        }`}
+      />
     </button>
   );
 }

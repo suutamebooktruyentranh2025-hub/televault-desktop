@@ -369,6 +369,17 @@ function openIndexDb(dbPath) {
 
     upsert(entry) {
       const tx = db.transaction(() => {
+        const existing = db.prepare('SELECT message_id FROM files WHERE path = ?').all(entry.path);
+        for (const row of existing) {
+          if (row.message_id !== entry.messageId) {
+            if (row.message_id > entry.messageId) {
+              return;
+            }
+            db.prepare('DELETE FROM files WHERE message_id = ?').run(row.message_id);
+            db.prepare('DELETE FROM file_tags WHERE message_id = ?').run(row.message_id);
+          }
+        }
+
         const partsJson =
           Array.isArray(entry.parts) && entry.parts.length > 0 ? JSON.stringify(entry.parts) : null;
         db.prepare(
@@ -462,7 +473,15 @@ function openIndexDb(dbPath) {
     },
 
     getAll() {
-      const rows = db.prepare('SELECT * FROM files WHERE message_id > 0').all();
+      const rows = db.prepare(`
+        SELECT f.* FROM files f
+        INNER JOIN (
+          SELECT path, MAX(message_id) AS max_id
+          FROM files
+          WHERE message_id > 0
+          GROUP BY path
+        ) latest ON f.path = latest.path AND f.message_id = latest.max_id
+      `).all();
       const allTagRows = db.prepare('SELECT message_id, tag FROM file_tags').all();
       /** @type {Map<number, string[]>} */
       const tagsByMessageId = new Map();
@@ -511,7 +530,7 @@ function openIndexDb(dbPath) {
     },
 
     countEntries() {
-      return db.prepare('SELECT COUNT(*) AS c FROM files').get().c;
+      return db.prepare('SELECT COUNT(DISTINCT path) AS c FROM files WHERE message_id > 0').get().c;
     },
 
     reconcileToMessageIds(validIds) {
@@ -561,7 +580,7 @@ function openIndexDb(dbPath) {
     listVisibleFileCount() {
       return db
         .prepare(
-          `SELECT COUNT(*) AS c FROM files
+          `SELECT COUNT(DISTINCT path) AS c FROM files
            WHERE path NOT LIKE '/Rác/%' AND path NOT LIKE '%/'`,
         )
         .get().c;

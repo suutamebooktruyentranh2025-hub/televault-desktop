@@ -1,14 +1,10 @@
-# Task Tracker: Dashboard Performance Optimization
+# Task Tracker: Shared Vault Parity (Theo thư mục, Thẻ, và Khắc phục F5)
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Benchmark & identify root causes (Intl in loop, payload bloat, SQLite query) | `[x]` |
-| 2 | Optimize `dashboardAggregator.js` in `@televault/core` (cache Intl, lightweight uploadsPerDay) | `[x]` |
-| 3 | Add `getDashboardEntries` and `getDayFiles` to `indexDb.js` | `[x]` |
-| 4 | Upgrade `vault:getDashboard` & add `vault:getDayFiles` in `browseHandlers.js` | `[x]` |
-| 5 | Expose `getDayFiles` in `preload.js` and `electron/preload.js` | `[x]` |
-| 6 | Debounce `vaultApi.onChanged` in `useDashboard.js` (800ms) | `[x]` |
-| 7 | Lazy-load day files with top 100 limit in `DashboardDayDetail.jsx` | `[x]` |
-| 8 | Add symmetrical i18n keys for day detail loading and top count in `locales.js` | `[x]` |
-| 9 | Verification: core unit tests, Vite build, e2e timing benchmarks | `[x]` |
-
+| 1 | Khắc phục lỗi F5: Cập nhật `sharedVaultManager.js` mở SQLite cục bộ ngay lập tức và `useSharedVaults.js` tự động reload | `[x]` |
+| 2 | Hỗ trợ `chatId` cho `vault:allTags`, `vault:getFoldersDetails`, `vault:getFlatStories`, `vault:getFlatFiles` trong `browseHandlers.js` | `[x]` |
+| 3 | Tích hợp `chatId` vào `useTagFilter.js` để lọc thẻ trên Shared Vault | `[x]` |
+| 4 | Bổ sung `browseScope` (Theo thư mục, Bộ truyện, Tệp lẻ) vào `useSharedVaults.js` | `[x]` |
+| 5 | Hiển thị `BrowseScopeDropdown` & `TagSelectDropdown` trên TopBar và lọc giao diện trong `VaultShell.jsx` & `VaultContentArea.jsx` | `[x]` |
+| 6 | Chạy verification (`npm test`, `npm run build`) | `[x]` |

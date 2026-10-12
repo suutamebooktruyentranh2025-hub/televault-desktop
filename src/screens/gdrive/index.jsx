@@ -9,7 +9,6 @@ import { GDriveHistoryTab } from './tabs/GDriveHistoryTab';
 import { GDriveCacheExplorerTab } from './tabs/GDriveCacheExplorerTab';
 import { GDriveLiveScanFeed } from './components/GDriveLiveScanFeed';
 import { GDriveProcessInspector } from './components/GDriveProcessInspector';
-import { IconGoogleDrive } from '../../components/DriveIcons';
 
 export function GDriveSyncScreen() {
   const state = useGDriveSyncState();
@@ -48,13 +47,10 @@ export function GDriveSyncScreen() {
     handlePollIntervalChange,
     gdriveConflictPolicy,
     handleConflictPolicyChange,
-    gdrivePropagateDeletes,
-    handlePropagateDeletesChange,
     autoSyncAfterScan,
     handleAutoSyncAfterScanChange,
     handleStartSync,
-    checkConnBusy,
-    handleCheckConnection,
+    handleReconnect,
     progressSources,
     progressSourceId,
     setProgressSourceId,
@@ -158,148 +154,10 @@ export function GDriveSyncScreen() {
         </div>
       ) : (
         <>
-          {/* Top Bar Tier 1: Account info + Sync Actions */}
-          <div className="shrink-0 border-b border-[var(--gd-border)] bg-[var(--gd-surface)] px-4 py-2.5 flex items-center justify-between gap-3 shadow-xs">
-            {/* Left: Brand / Account / Status */}
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="h-9 w-9 rounded-xl bg-white dark:bg-zinc-800 border border-[var(--gd-border)] shadow-xs flex items-center justify-center shrink-0 p-1.5 transition-transform hover:scale-105">
-                <IconGoogleDrive className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex flex-col justify-center">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-xs text-[var(--gd-text)] truncate max-w-[240px]" title={gdriveEmail}>
-                    {gdriveEmail || 'Google Drive'}
-                  </span>
-                  {/* Status Badge */}
-                  {isScanning ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
-                      {t('gdriveStatusScanning')}
-                    </span>
-                  ) : gdriveStatus === 'syncing' ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {t('gdriveStatusSyncing')}
-                    </span>
-                  ) : gdriveIsPaused ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      {t('gdriveStatsPaused')}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      {t('gdriveStatusReady')}
-                    </span>
-                  )}
-
-                  {telegramFloodWaitSec > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                      <span>⏳</span>
-                      {t('gdriveTelegramFloodBadge', { n: telegramFloodWaitSec })}
-                    </span>
-                  )}
-
-                  {/* Check Connection Button */}
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-[var(--gd-border)] bg-[var(--gd-surface)] hover:bg-[var(--gd-surface-hover)] text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-60"
-                    onClick={handleCheckConnection}
-                    disabled={checkConnBusy}
-                    title={t('gdriveCheckConnectionTooltip')}
-                  >
-                    <svg className={`h-3 w-3 ${checkConnBusy ? 'animate-spin text-blue-500' : 'text-amber-500 dark:text-amber-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span>{checkConnBusy ? t('gdriveCheckingConnection') : t('gdriveCheckConnectionBtnText')}</span>
-                  </button>
-                </div>
-                {gdriveLastError && (
-                  <div className="text-[10px] text-red-500 truncate max-w-[340px] font-medium mt-0.5" title={gdriveLastError}>
-                    {gdriveLastError}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right: Actions Button Group */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Start Sync / Resume / Pause */}
-              {!isScanning && gdriveStatus === 'idle' && !gdriveIsPaused && gdriveQueue.length > 0 && (
-                <button
-                  type="button"
-                  className="text-xs px-3 py-1.5 font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-98"
-                  onClick={handleStartSync}
-                >
-                  <svg className="h-3 w-3 fill-current" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  <span>{t('gdriveBtnSyncWithCount', { count: gdriveQueue.length })}</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                className={`text-xs px-3 py-1.5 font-semibold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-98 ${
-                  gdriveIsPaused
-                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
-                    : 'bg-[var(--gd-surface)] hover:bg-[var(--gd-surface-hover)] text-[var(--gd-text)] border-[var(--gd-border)]'
-                }`}
-                onClick={handleTogglePause}
-                title={gdriveIsPaused ? t('gdriveTooltipResume') : t('gdriveTooltipPause')}
-              >
-                {gdriveIsPaused ? (
-                  <>
-                    <svg className="h-3.5 w-3.5 fill-current text-amber-600 dark:text-amber-400" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                    <span>{t('gdriveStatsResume')}</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                    </svg>
-                    <span>{t('gdriveStatsPause')}</span>
-                  </>
-                )}
-              </button>
-
-              {/* Scan Now Button */}
-              <button
-                type="button"
-                className={`text-xs px-3.5 py-1.5 font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                  isScanning
-                    ? 'bg-blue-600 text-white cursor-wait opacity-90'
-                    : 'bg-[var(--gd-primary)] hover:opacity-90 text-white active:scale-98'
-                }`}
-                onClick={isScanning ? undefined : handleScanNow}
-                disabled={isScanning}
-                title={isScanning ? t('gdriveScanningTitle') : t('gdriveScanAllTitle')}
-              >
-                {isScanning ? (
-                  <>
-                    <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    <span>{t('gdriveStatusScanning')}</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span>{t('gdriveBtnScanDrive')}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Top Bar Tier 2: Navigation Tabs */}
-          <div className="shrink-0 border-b border-[var(--gd-border)] bg-[var(--gd-surface-elevated)]/40 px-4 py-1.5 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-zinc-200/50 dark:bg-zinc-800/50 border border-[var(--gd-border)]/50 text-xs">
+          {/* Unified GDrive Navigation Tabs & Action Bar */}
+          <div className="shrink-0 border-b border-[var(--gd-border)] bg-[var(--gd-surface)] px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+            {/* Left: Navigation Tabs */}
+            <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-zinc-200/50 dark:bg-zinc-800/50 border border-[var(--gd-border)]/50 text-xs shrink-0">
               {/* Files & Folders */}
               <button
                 type="button"
@@ -416,6 +274,124 @@ export function GDriveSyncScreen() {
                 </svg>
                 <span>{t('gdriveTabSettings')}</span>
               </button>
+            </div>
+
+            {/* Right: Status badge & Action Controls */}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {/* Error warning & Reconnect if error */}
+              {gdriveLastError && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 max-w-[320px]">
+                  <span className="text-[11px] text-red-600 dark:text-red-400 truncate font-medium" title={gdriveLastError}>
+                    {gdriveLastError}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleReconnect}
+                    title={t('gdriveBtnReconnectTooltip')}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 transition-all cursor-pointer shrink-0 shadow-2xs active:scale-95"
+                  >
+                    <span>{t('gdriveBtnReconnect')}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Telegram Flood Wait Badge */}
+              {telegramFloodWaitSec > 0 && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                  <span>⏳</span>
+                  {t('gdriveTelegramFloodBadge', { n: telegramFloodWaitSec })}
+                </span>
+              )}
+
+              {/* Start Sync (when queue exists and idle) */}
+              {!isScanning && gdriveStatus === 'idle' && !gdriveIsPaused && gdriveQueue.length > 0 && (
+                <button
+                  type="button"
+                  className="text-xs px-3 py-1.5 font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-98"
+                  onClick={handleStartSync}
+                >
+                  <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  <span>{t('gdriveBtnSyncWithCount', { count: gdriveQueue.length })}</span>
+                </button>
+              )}
+
+              {/* Pause / Resume Button with floating tooltip */}
+              <div className="relative group/pause">
+                <button
+                  type="button"
+                  className={`text-xs px-3 py-1.5 font-semibold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-98 ${
+                    gdriveIsPaused
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                      : 'bg-[var(--gd-surface)] hover:bg-[var(--gd-surface-hover)] text-[var(--gd-text)] border-[var(--gd-border)]'
+                  }`}
+                  onClick={handleTogglePause}
+                  aria-label={gdriveIsPaused ? t('gdriveTooltipResume') : t('gdriveTooltipPause')}
+                >
+                  {gdriveIsPaused ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 fill-current text-amber-600 dark:text-amber-400" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      <span>{t('gdriveStatsResume')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                      </svg>
+                      <span>{t('gdriveStatsPause')}</span>
+                    </>
+                  )}
+                </button>
+                <div
+                  role="tooltip"
+                  className="pointer-events-none absolute right-0 top-full mt-1.5 z-40 hidden group-hover/pause:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+                >
+                  <span className="absolute -top-1 right-4 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+                  <span className="relative z-10">{gdriveIsPaused ? t('gdriveTooltipResume') : t('gdriveTooltipPause')}</span>
+                </div>
+              </div>
+
+              {/* Scan Now Button with floating tooltip */}
+              <div className="relative group/scan">
+                <button
+                  type="button"
+                  className={`text-xs px-3.5 py-1.5 font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                    isScanning
+                      ? 'bg-blue-600 text-white cursor-wait opacity-90'
+                      : 'bg-[var(--gd-primary)] hover:opacity-90 text-white active:scale-98'
+                  }`}
+                  onClick={isScanning ? undefined : handleScanNow}
+                  disabled={isScanning}
+                  aria-label={isScanning ? t('gdriveScanningTitle') : t('gdriveScanAllTitle')}
+                >
+                  {isScanning ? (
+                    <>
+                      <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      <span>{t('gdriveStatusScanning')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <span>{t('gdriveBtnScanDrive')}</span>
+                    </>
+                  )}
+                </button>
+                <div
+                  role="tooltip"
+                  className="pointer-events-none absolute right-0 top-full mt-1.5 z-40 hidden group-hover/scan:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+                >
+                  <span className="absolute -top-1 right-4 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+                  <span className="relative z-10">{isScanning ? t('gdriveScanningTitle') : t('gdriveScanAllTitle')}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -674,16 +650,10 @@ export function GDriveSyncScreen() {
                   syncTargetChatId={syncTargetChatId}
                   handleSyncTargetChange={handleSyncTargetChange}
                   syncTargets={syncTargets}
-                  vaultRescanBusy={vaultRescanBusy}
-                  gdriveScanPhase={gdriveScanPhase}
-                  gdriveScanInfo={gdriveScanInfo}
-                  handleRescanSyncTargetVault={handleRescanSyncTargetVault}
                   gdrivePollInterval={gdrivePollInterval}
                   handlePollIntervalChange={handlePollIntervalChange}
                   gdriveConflictPolicy={gdriveConflictPolicy}
                   handleConflictPolicyChange={handleConflictPolicyChange}
-                  gdrivePropagateDeletes={gdrivePropagateDeletes}
-                  handlePropagateDeletesChange={handlePropagateDeletesChange}
                   autoSyncAfterScan={autoSyncAfterScan}
                   handleAutoSyncAfterScanChange={handleAutoSyncAfterScanChange}
                   progressSources={progressSources}

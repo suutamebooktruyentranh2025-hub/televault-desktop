@@ -14,7 +14,6 @@ import { useTransfers } from '../hooks/useTransfers';
 import { useI18n } from '../context/I18nContext';
 import { useDialog } from '../context/DialogContext';
 import { useToast } from '../context/ToastContext';
-import { ConsolePanel } from './ConsolePanel';
 import { StatusBar } from './StatusBar';
 import { useVaultSelection } from '../hooks/vault/useVaultSelection';
 import { useVaultNavigation } from '../hooks/vault/useVaultNavigation';
@@ -33,11 +32,14 @@ import {
   IconHome,
   IconListView,
   IconMoveTo,
+  IconRefresh,
   IconSettings,
+  IconSharedDrive,
   IconTransfer,
   IconTrash,
 } from './DriveIcons';
 import { TagSelectDropdown } from './TagSelectDropdown';
+import { BrowseScopeDropdown } from './BrowseScopeDropdown';
 
 export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccount, onAddAccount, floodWaitSec = 0 }) {
   const { t, locale } = useI18n();
@@ -50,7 +52,10 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
 
   const selection = useVaultSelection();
   const navigation = useVaultNavigation({ t, vault, sharedVaults });
-  const tagFilter = useTagFilter();
+  const isSharedSection = navigation.section === 'shared-vault';
+  const tagFilter = useTagFilter({
+    chatId: isSharedSection ? sharedVaults.activeVaultId : null,
+  });
   const actions = useVaultActions({
     t,
     confirm,
@@ -64,7 +69,65 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
 
   const [dragOver, setDragOver] = useState(false);
   const [pendingTarget, setPendingTarget] = useState(null);
+  const [vaultRescanBusy, setVaultRescanBusy] = useState(false);
+  const [rescanProgress, setRescanProgress] = useState(0);
   const activeAccount = accounts?.find((a) => a.id === activeAccountId) || { name: t('defaultUserName'), phone: '' };
+
+  useEffect(() => {
+    if (!window.televault?.vault?.onScanProgress) return undefined;
+    const unsub = window.televault.vault.onScanProgress((payload) => {
+      if (typeof payload?.scanned === 'number') {
+        setRescanProgress(payload.scanned);
+      }
+    });
+    return () => unsub?.();
+  }, []);
+
+  const handleRescanVault = async () => {
+    if (vaultRescanBusy) return;
+    const confirmed = await confirm(t('rescanVaultConfirm'));
+    if (!confirmed) return;
+
+    setVaultRescanBusy(true);
+    setRescanProgress(0);
+    try {
+      const isShared = navigation.section === 'shared-vault';
+      const targetChatId = isShared ? sharedVaults.activeVaultId : null;
+      const res = await window.televault?.vault?.rescanHistory?.({ chatId: targetChatId });
+      if (res?.ok) {
+        showToast(t('rescanVaultDone', {
+          files: res.fileCount ?? 0,
+          messages: res.scanned ?? 0,
+        }));
+        if (isShared) {
+          await sharedVaults.refresh?.();
+        } else {
+          await vault.refresh?.();
+        }
+      } else if (res?.aborted) {
+        showToast(t('rescanVaultCancelled'), { variant: 'info' });
+      } else {
+        showToast(res?.error || t('rescanVaultError'), { variant: 'error' });
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError' || String(err?.message || err).toLowerCase().includes('abort')) {
+        showToast(t('rescanVaultCancelled'), { variant: 'info' });
+      } else {
+        showToast(String(err?.message || err) || t('rescanVaultError'), { variant: 'error' });
+      }
+    } finally {
+      setVaultRescanBusy(false);
+      setRescanProgress(0);
+    }
+  };
+
+  const handleCancelRescan = async () => {
+    try {
+      await window.televault?.vault?.cancelRescan?.();
+    } catch {
+      // Ignore cancel error
+    }
+  };
 
   useEffect(() => {
     function onGdNavigate(e) {
@@ -115,7 +178,6 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
   }, [pendingTarget, vault.currentFolder, vault.files, vault.loading, selection]);
 
   const isVaultSection = navigation.section === 'vault';
-  const isSharedSection = navigation.section === 'shared-vault';
 
   const folderSummary = formatFolderSummary({
     folders: isSharedSection ? sharedVaults.folders : vault.folders,
@@ -166,23 +228,132 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
     }
   } else if (isSharedSection) {
     topBarLeftContent = (
-      <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-        <DriveBreadcrumb crumbs={sharedVaults.breadcrumbs} onNavigate={sharedVaults.goTo} showSingle={true} />
-        {folderSummary?.text && (
-          <span
-            className="text-xs text-[var(--gd-text-secondary)] whitespace-nowrap select-none opacity-75 hidden xl:inline shrink-0"
-            title={folderSummary.tooltip}
-          >
-            • {folderSummary.text}
-          </span>
-        )}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <IconSharedDrive className="h-5 w-5 shrink-0 text-[var(--gd-primary)]" />
+        <h1 className="text-sm font-semibold text-[var(--gd-text)] truncate">
+          {sharedVaults.activeVault?.title || t('navSharedWithMe')}
+        </h1>
       </div>
     );
   } else if (navigation.section === 'gdrive') {
+    const gdSync = navigation.syncStatus?.gdrive;
+    const isConnected = Boolean(gdSync?.isConnected);
+    const isPaused = Boolean(gdSync?.isPaused || gdSync?.status === 'paused');
+    const isScanning = Boolean(gdSync?.scanPhase);
+    const isSyncing = gdSync?.status === 'syncing' || Boolean(gdSync?.currentSyncFile);
+    const hasError = Boolean(gdSync?.lastError || gdSync?.status === 'error');
+
+    let statusBadge = null;
+    if (isConnected) {
+      if (isScanning) {
+        statusBadge = (
+          <div className="relative group/gdrive-status inline-flex items-center">
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-2xs"
+              aria-label={t('gdriveStatusScanning')}
+            >
+              <svg className="animate-spin h-3.5 w-3.5 text-blue-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+            </div>
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            >
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+              <span className="relative z-10">{t('gdriveStatusScanning')}</span>
+            </div>
+          </div>
+        );
+      } else if (isSyncing) {
+        statusBadge = (
+          <div className="relative group/gdrive-status inline-flex items-center">
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs"
+              aria-label={t('gdriveStatusSyncing')}
+            >
+              <svg className="h-3.5 w-3.5 animate-pulse text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+              </svg>
+            </div>
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            >
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+              <span className="relative z-10">{t('gdriveStatusSyncing')}</span>
+            </div>
+          </div>
+        );
+      } else if (isPaused) {
+        statusBadge = (
+          <div className="relative group/gdrive-status inline-flex items-center">
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-2xs"
+              aria-label={t('gdriveStatsPaused')}
+            >
+              <svg className="h-3 w-3 fill-amber-500" viewBox="0 0 24 24">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            </div>
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            >
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+              <span className="relative z-10">{t('gdriveStatsPaused')}</span>
+            </div>
+          </div>
+        );
+      } else if (hasError) {
+        statusBadge = (
+          <div className="relative group/gdrive-status inline-flex items-center">
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25 shadow-2xs"
+              aria-label={gdSync?.lastError || t('syncStatusError')}
+            >
+              <svg className="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            >
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+              <span className="relative z-10">{gdSync?.lastError || t('syncStatusError')}</span>
+            </div>
+          </div>
+        );
+      } else {
+        statusBadge = (
+          <div className="relative group/gdrive-status inline-flex items-center">
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs"
+              aria-label={t('gdriveStatusReady')}
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            </div>
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            >
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+              <span className="relative z-10">{t('gdriveStatusReady')}</span>
+            </div>
+          </div>
+        );
+      }
+    }
+
     topBarLeftContent = (
       <div className="flex items-center gap-2.5 min-w-0">
         <IconGDriveLogo className="h-5 w-5 shrink-0" />
         <h1 className="text-sm font-semibold text-[var(--gd-text)] truncate">{t('gdriveSection')}</h1>
+        {statusBadge}
       </div>
     );
   } else if (navigation.section === 'dashboard') {
@@ -214,6 +385,7 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
       <div className="flex items-center gap-1.5">
         {!navigation.isTrash && (
           <>
+            <BrowseScopeDropdown scope={vault.browseScope} onSelectScope={vault.setBrowseScope} />
             <TagSelectDropdown tagFilter={tagFilter} />
             <button
               type="button"
@@ -224,6 +396,35 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
               <IconDuplicate className="h-4 w-4 shrink-0" />
               <span className="hidden md:inline">{t('navDuplicates')}</span>
             </button>
+            {vaultRescanBusy ? (
+              <div className="flex items-center gap-1.5 rounded-full bg-[var(--gd-primary)] text-white pl-2.5 pr-1 py-0.5 text-xs font-semibold shadow-xs">
+                <IconRefresh className="h-3.5 w-3.5 shrink-0 animate-spin text-white" />
+                <span className="text-white">
+                  {rescanProgress > 0 ? t('rescanVaultProgress', { n: rescanProgress }) : t('rescanVaultBusy')}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCancelRescan}
+                  title={t('rescanVaultCancel')}
+                  className="flex items-center justify-center rounded-full p-1 text-white/80 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRescanVault}
+                title={t('rescanVaultTooltip')}
+                className="flex items-center gap-1.5 rounded-full bg-[var(--gd-primary)] hover:opacity-90 text-white px-3 py-1 text-xs font-semibold transition-all shadow-xs cursor-pointer active:scale-98"
+              >
+                <IconRefresh className="h-3.5 w-3.5 shrink-0 text-white" />
+                <span className="hidden md:inline">{t('rescanVaultButton')}</span>
+              </button>
+            )}
           </>
         )}
         <div className="mx-0.5 h-4 w-[1px] bg-[var(--gd-border)]" />
@@ -256,6 +457,42 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
   } else if (isSharedSection) {
     topBarRightContent = (
       <div className="flex items-center gap-1.5">
+        {sharedVaults.activeVaultId && (
+          <>
+            <BrowseScopeDropdown scope={sharedVaults.browseScope} onSelectScope={sharedVaults.setBrowseScope} />
+            <TagSelectDropdown tagFilter={tagFilter} />
+          </>
+        )}
+        {vaultRescanBusy ? (
+          <div className="flex items-center gap-1.5 rounded-full bg-[var(--gd-primary)] text-white pl-2.5 pr-1 py-0.5 text-xs font-semibold shadow-xs">
+            <IconRefresh className="h-3.5 w-3.5 shrink-0 animate-spin text-white" />
+            <span className="text-white">
+              {rescanProgress > 0 ? t('rescanVaultProgress', { n: rescanProgress }) : t('rescanVaultBusy')}
+            </span>
+            <button
+              type="button"
+              onClick={handleCancelRescan}
+              title={t('rescanVaultCancel')}
+              className="flex items-center justify-center rounded-full p-1 text-white/80 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleRescanVault}
+            title={t('rescanVaultTooltip')}
+            className="flex items-center gap-1.5 rounded-full bg-[var(--gd-primary)] hover:opacity-90 text-white px-3 py-1 text-xs font-semibold transition-all shadow-xs cursor-pointer active:scale-98"
+          >
+            <IconRefresh className="h-3.5 w-3.5 shrink-0 text-white" />
+            <span className="hidden md:inline">{t('rescanVaultButton')}</span>
+          </button>
+        )}
+        <div className="mx-0.5 h-4 w-[1px] bg-[var(--gd-border)]" />
         <button
           type="button"
           title={t('viewList')}
@@ -404,18 +641,6 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
                   {t('telegramFloodWaitBanner', { n: formatWaitTime(floodWaitSec, locale !== 'en') })}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => window.televault?.shell?.openExternal?.('https://t.me/Spambot')}
-                className="shrink-0 font-medium text-[var(--gd-primary)] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <span>{t('checkSpamBot')}</span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </button>
             </div>
           )}
 
@@ -445,25 +670,7 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
         </div>
       </div>
 
-      {navigation.logFooterVisible && (
-        <>
-          <div
-            className="h-1 cursor-ns-resize bg-[var(--gd-border)] hover:bg-[var(--gd-primary)] transition-colors"
-            onPointerDown={navigation.handleLogResizePointerDown}
-            title={t('resizeFooter')}
-          />
-          <ConsolePanel
-            logs={navigation.logs}
-            onClearLogs={navigation.clearLogs}
-            heightPx={navigation.logPanelHeightPx}
-          />
-        </>
-      )}
-      <StatusBar
-        logFooterVisible={navigation.logFooterVisible}
-        onToggleLogFooter={navigation.toggleLogFooter}
-        floodWaitSec={floodWaitSec}
-      />
+      <StatusBar floodWaitSec={floodWaitSec} />
 
       {actions.folderProgress && (
         <div

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useLogs } from '../useLogs';
+import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../../constants/vaultConstants';
 
 export function sectionTitle(section, t, isTrash, vaultView = 'files') {
   if (section === 'dashboard') return t('dashboardTitle');
@@ -41,45 +41,7 @@ export function useVaultNavigation({ t, vault, sharedVaults }) {
   const [localSyncStatus, setLocalSyncStatus] = useState(null);
   const [gdriveSyncStatus, setGDriveSyncStatus] = useState(null);
 
-  const { logs, clearLogs } = useLogs();
-  const [logFooterVisible, setLogFooterVisible] = useState(() => {
-    return localStorage.getItem('televaultLogFooterVisible') === 'true';
-  });
-  const [logPanelHeightPx, setLogPanelHeightPx] = useState(() => {
-    const cached = parseInt(localStorage.getItem('televaultLogPanelHeightPx'), 10);
-    return isNaN(cached) ? 128 : cached;
-  });
 
-  const toggleLogFooter = useCallback(() => {
-    setLogFooterVisible((v) => {
-      const next = !v;
-      localStorage.setItem('televaultLogFooterVisible', String(next));
-      return next;
-    });
-  }, []);
-
-  const handleLogResizePointerDown = useCallback((e) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startHeight = logPanelHeightPx;
-
-    const onPointerMove = (ev) => {
-      const diff = startY - ev.clientY;
-      const newH = Math.min(Math.max(startHeight + diff, 100), 500);
-      setLogPanelHeightPx(newH);
-    };
-
-    const onPointerUp = (ev) => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      const diff = startY - ev.clientY;
-      const newH = Math.min(Math.max(startHeight + diff, 100), 500);
-      localStorage.setItem('televaultLogPanelHeightPx', String(newH));
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-  }, [logPanelHeightPx]);
 
   useEffect(() => {
     // 1. Local Sync subscription
@@ -179,7 +141,7 @@ export function useVaultNavigation({ t, vault, sharedVaults }) {
         isConnected: isGDriveConnected,
         email: gd?.email || '',
         status: gd?.status || 'disconnected',
-        isPaused: Boolean(gd?.isPaused),
+        isPaused: Boolean(gd?.isPaused || gd?.status === 'paused'),
         scanPhase: gd?.scanPhase || null,
         currentSyncFile: gd?.currentSyncFile || null,
         speedBps: gd?.speedBps || 0,
@@ -192,10 +154,8 @@ export function useVaultNavigation({ t, vault, sharedVaults }) {
     };
   }, [localSyncStatus, gdriveSyncStatus]);
 
-  const trash_root = vault.stats?.trashFolder || '/Rác/';
-  const isTrash =
-    vault.currentFolder === trash_root ||
-    (typeof vault.currentFolder === 'string' && vault.currentFolder.startsWith(trash_root));
+  const trash_root = vault.stats?.trashFolder || DEFAULT_TRASH_FOLDER;
+  const isTrash = isTrashPath(vault.currentFolder, trash_root);
 
   const trash_breadcrumbs = useMemo(() => {
     const crumbs = [{ label: t('navTrash'), path: trash_root }];
@@ -219,7 +179,7 @@ export function useVaultNavigation({ t, vault, sharedVaults }) {
 
   useEffect(() => {
     if (!isSearching) {
-      setSearchResults([]);
+      setSearchResults((prev) => (prev.length === 0 ? prev : []));
       return undefined;
     }
     let cancelled = false;
@@ -254,12 +214,6 @@ export function useVaultNavigation({ t, vault, sharedVaults }) {
     setSearchResults,
     searchLoading,
     syncStatus,
-    logs,
-    clearLogs,
-    logFooterVisible,
-    toggleLogFooter,
-    logPanelHeightPx,
-    handleLogResizePointerDown,
     trash_root,
     isTrash,
     trash_breadcrumbs,

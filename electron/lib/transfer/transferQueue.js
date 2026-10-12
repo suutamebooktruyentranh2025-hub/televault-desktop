@@ -126,11 +126,14 @@ class TransferQueue {
       task.status = 'queued';
     }
     if (task.status !== 'queued') return Promise.resolve();
-    return new Promise((resolve, reject) => {
+    const done = new Promise((resolve, reject) => {
       this._waiting.push([task, resolve, reject]);
       this._notify(task);
       this._pump();
     });
+    done.catch(() => {});
+    task._donePromise = done;
+    return done;
   }
 
   /** @param {TransferTask} task @param {(value?: void) => void} resolve @param {(reason?: unknown) => void} reject */

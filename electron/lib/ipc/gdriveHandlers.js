@@ -2,6 +2,7 @@ const { BrowserWindow, dialog, shell, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { isInTrash } = require('@televault/core');
+const { safeBroadcast } = require('./vaultHandlers');
 const {
   importGdriveProgressFromAccountDir,
   exportGdriveProgressZip,
@@ -27,7 +28,6 @@ function registerGDriveHandlers(ipcMain, ctx) {
   let lastBroadcastTime = 0;
 
   function broadcastGDriveChanged(immediate = false) {
-    if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
     const now = Date.now();
     const THROTTLE_MS = 200;
 
@@ -39,15 +39,7 @@ function registerGDriveHandlers(ipcMain, ctx) {
       lastBroadcastTime = now;
       const svc = ctx.getGDriveSyncService();
       const snapshot = svc ? svc.getSnapshot() : null;
-      for (const win of BrowserWindow.getAllWindows()) {
-        try {
-          if (!win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
-            win.webContents.send('gdrive:changed', snapshot);
-          }
-        } catch {
-          // ignore closed/disposed windows
-        }
-      }
+      safeBroadcast('gdrive:changed', snapshot);
     } else if (!broadcastTimer) {
       broadcastTimer = setTimeout(() => {
         broadcastTimer = null;
@@ -57,16 +49,7 @@ function registerGDriveHandlers(ipcMain, ctx) {
   }
 
   function broadcastGDriveProgress(payload) {
-    if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
-    for (const win of BrowserWindow.getAllWindows()) {
-      try {
-        if (!win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
-          win.webContents.send('gdrive:progress', payload);
-        }
-      } catch {
-        // ignore closed/disposed windows
-      }
-    }
+    safeBroadcast('gdrive:progress', payload);
   }
 
   ipcMain.handle('gdrive:getStatus', () => {
@@ -129,10 +112,10 @@ function registerGDriveHandlers(ipcMain, ctx) {
     return { ok: true };
   });
 
-  ipcMain.handle('gdrive:disconnect', () => {
+  ipcMain.handle('gdrive:disconnect', (_evt, opts) => {
     const svc = ctx.getGDriveSyncService();
     if (!svc) return { ok: false };
-    svc.disconnect();
+    svc.disconnect(opts);
     broadcastGDriveChanged();
     return { ok: true };
   });
@@ -186,16 +169,10 @@ function registerGDriveHandlers(ipcMain, ctx) {
     }
 
     // Launch scan asynchronously in background so IPC does not block the UI
-    svc.scanNow({ forceIndex: true, ...opts })
-      .then(() => {
-        broadcastGDriveChanged(true);
-      })
-      .catch((e) => {
-        console.error('[GDriveSyncService] background scan error:', e);
-        broadcastGDriveChanged(true);
-      });
+    svc.scanNow({ forceIndex: true, ...opts }).catch((e) => {
+      console.error('[GDriveSyncService] background scan error:', e);
+    });
 
-    broadcastGDriveChanged(true);
     return { ok: true, started: true };
   });
 
@@ -563,12 +540,6 @@ function registerGDriveHandlers(ipcMain, ctx) {
     }];
     const mgr = ctx.getSharedVaults?.();
     if (mgr) {
-      try {
-        // Refresh, but SharedVaultManager keeps disk/memory known vaults if getChats is incomplete.
-        await mgr.discover();
-      } catch {
-        // keep previously discovered list
-      }
       for (const vault_item of mgr.getDiscoveredVaults()) {
         // Never offer the personal vault as a "shared" duplicate.
         if (personalChatId != null && Number(vault_item.chatId) === Number(personalChatId)) continue;

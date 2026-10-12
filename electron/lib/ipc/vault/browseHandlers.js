@@ -9,8 +9,16 @@ const {
   folderCounts,
   K_TRASH_FOLDER,
   buildDashboardStats,
+  visibleFiles,
+  extractStoryFolder,
+  entryName,
 } = require('@televault/core');
-const { serializeEntry } = require('./vaultShared');
+const {
+  serializeEntry,
+  broadcastVaultChanged,
+  broadcastSharedVaultsChanged,
+  safeBroadcast,
+} = require('./vaultShared');
 
 function registerBrowseHandlers(ipcMain, ctx) {
   ipcMain.handle('vault:getListing', (_evt, { folder, sortField = 'name', sortDirection = 'asc' }) => {
@@ -171,20 +179,31 @@ function getDayBoundsUtc(dateStr, timeZone) {
     return { ok: true, tags: index[folderPath] || [] };
   });
 
-  ipcMain.handle('vault:allTags', async () => {
-    if (!ctx.isReady()) return { ok: false, tags: {}, foldersByTag: {} };
-    const db = ctx.getDb();
+  function resolveDb(targetChatId) {
+    if (targetChatId != null && targetChatId !== '') {
+      const sharedMgr = ctx.getSharedVaults?.();
+      return sharedMgr?.getInstance?.(Number(targetChatId))?.db || null;
+    }
+    if (!ctx.isReady()) return null;
+    return ctx.getDb?.() || null;
+  }
+
+  ipcMain.handle('vault:allTags', async (_evt, { chatId } = {}) => {
+    const db = resolveDb(chatId);
+    if (!db) return { ok: false, tags: {}, foldersByTag: {} };
     db.reconcileFolderTagsFromMarkers();
     let foldersByTag = db.foldersByTag();
     const tagCounts = db.allTags();
 
     const needsTelegramResync = Object.keys(tagCounts).some((tag) => !(foldersByTag[tag]?.length));
     if (needsTelegramResync) {
-      const channel = ctx.getChannel?.();
-      const chatId = db.getVaultChatId();
-      if (channel && chatId) {
+      const channel = (chatId != null && chatId !== '')
+        ? ctx.getSharedVaults?.()?.getInstance?.(Number(chatId))?.channel
+        : ctx.getChannel?.();
+      const vaultChatId = Number(chatId) || db.getVaultChatId();
+      if (channel && vaultChatId) {
         try {
-          await channel.resyncDirMarkers(chatId);
+          await channel.resyncDirMarkers(vaultChatId);
           foldersByTag = db.foldersByTag();
         } catch (e) {
           console.error('[vault:allTags resync]', e);
@@ -201,9 +220,9 @@ function getDayBoundsUtc(dateStr, timeZone) {
     return { ok: true, folders: listAllFolders(db.getAll()) };
   });
 
-  ipcMain.handle('vault:getFoldersDetails', (_evt, { paths = [] } = {}) => {
-    if (!ctx.isReady()) return { ok: false, folders: [] };
-    const db = ctx.getDb();
+  ipcMain.handle('vault:getFoldersDetails', (_evt, { paths = [], chatId } = {}) => {
+    const db = resolveDb(chatId);
+    if (!db) return { ok: false, folders: [] };
     const all = db.getAll();
     const folders = (paths || []).map((folderPath) => {
       const parts = folderPath.split('/').filter(Boolean);
@@ -222,6 +241,175 @@ function getDayBoundsUtc(dateStr, timeZone) {
       };
     });
     return { ok: true, folders };
+  });
+
+  ipcMain.handle('vault:getFlatStories', (_evt, { chatId, sortField = 'size', sortDirection = 'desc' } = {}) => {
+    const db = resolveDb(chatId);
+    if (!db) return { ok: false, folders: [] };
+    const all = db.getAll();
+    const files = visibleFiles(all);
+    const folderMap = new Map();
+
+    for (const file of files) {
+      const story = extractStoryFolder(file.path);
+      if (!story) continue;
+      let row = folderMap.get(story.path);
+      if (!row) {
+        row = {
+          path: story.path,
+          name: story.name,
+          subtext: story.subtext,
+          size: 0,
+          fileCount: 0,
+          folderCount: 0,
+          totalFiles: 0,
+          totalFolders: 0,
+          mtime: new Date(0),
+        };
+        folderMap.set(story.path, row);
+      }
+      row.size += file.size || 0;
+      row.fileCount += 1;
+      row.totalFiles += 1;
+      const fileMtime = file.mtime instanceof Date ? file.mtime : new Date(file.mtime || 0);
+      if (fileMtime > row.mtime) {
+        row.mtime = fileMtime;
+      }
+    }
+
+    const folders = [...folderMap.values()];
+    folders.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'size') {
+        cmp = (a.size || 0) - (b.size || 0);
+      } else if (sortField === 'mtime') {
+        cmp = a.mtime.getTime() - b.mtime.getTime();
+      } else {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return sortDirection === 'desc' ? -cmp : cmp;
+    });
+
+    return {
+      ok: true,
+      folders: folders.map((f) => ({
+        ...f,
+        mtime: f.mtime.toISOString(),
+      })),
+    };
+  });
+
+  ipcMain.handle('vault:getFlatFiles', (_evt, { chatId, sortField = 'size', sortDirection = 'desc' } = {}) => {
+    const db = resolveDb(chatId);
+    if (!db) return { ok: false, files: [] };
+    const all = db.getAll();
+    const files = visibleFiles(all);
+
+    files.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'size') {
+        cmp = (a.size || 0) - (b.size || 0);
+      } else if (sortField === 'mtime') {
+        const at = a.mtime instanceof Date ? a.mtime.getTime() : new Date(a.mtime || 0).getTime();
+        const bt = b.mtime instanceof Date ? b.mtime.getTime() : new Date(b.mtime || 0).getTime();
+        cmp = at - bt;
+      } else {
+        const an = entryName(a);
+        const bn = entryName(b);
+        cmp = an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return sortDirection === 'desc' ? -cmp : cmp;
+    });
+
+    const folderTags = db.folderTagsIndex();
+    return {
+      ok: true,
+      files: files.map((e) => serializeEntry(db, e, folderTags)),
+    };
+  });
+
+  let activeScanAbortController = null;
+
+  ipcMain.handle('vault:rescanHistory', async (_evt, { chatId } = {}) => {
+    if (activeScanAbortController) {
+      activeScanAbortController.abort();
+      activeScanAbortController = null;
+    }
+    const abortController = new AbortController();
+    activeScanAbortController = abortController;
+    const signal = abortController.signal;
+
+    // 1. Shared vault rescan if target chatId provided
+    if (chatId != null && chatId !== '') {
+      const targetChatId = Number(chatId);
+      const sharedMgr = ctx.getSharedVaults?.();
+      if (!sharedMgr) return { ok: false, error: 'not_ready' };
+      try {
+        const scanned = await sharedMgr.forceRescanVault(targetChatId, (n) => {
+          safeBroadcast('vault:scanProgress', { chatId: targetChatId, scanned: n });
+        }, { signal });
+        broadcastSharedVaultsChanged();
+        const fileCount = sharedMgr.getFiles(targetChatId, '/')?.length || 0;
+        return { ok: true, scanned, fileCount, chatId: targetChatId };
+      } catch (e) {
+        if (e.name === 'AbortError' || signal.aborted) {
+          broadcastSharedVaultsChanged();
+          return { ok: false, aborted: true };
+        }
+        console.error('[vault:rescanHistory shared-vault error]', e);
+        return { ok: false, error: String(e.message || e) };
+      } finally {
+        if (activeScanAbortController === abortController) {
+          activeScanAbortController = null;
+        }
+      }
+    }
+
+    // 2. Personal vault rescan
+    if (!ctx.isReady()) return { ok: false, error: 'not_ready' };
+    const channel = ctx.getChannel?.();
+    const myChatId = ctx.getChatId?.();
+    const db = ctx.getDb?.();
+    if (!channel || myChatId == null || !db) {
+      return { ok: false, error: 'vault_unavailable' };
+    }
+
+    try {
+      const scanned = await channel.scanHistory(
+        Number(myChatId),
+        (n) => {
+          safeBroadcast('vault:scanProgress', { chatId: Number(myChatId), scanned: n });
+        },
+        { forceFull: true, signal }
+      );
+      broadcastVaultChanged();
+      const fileCount = typeof db.countEntries === 'function'
+        ? db.countEntries()
+        : (typeof db.getAll === 'function'
+          ? db.getAll().filter((e) => !e.path.endsWith('/') && !e.path.startsWith('/Rác/')).length
+          : 0);
+      return { ok: true, scanned, fileCount, chatId: Number(myChatId) };
+    } catch (e) {
+      if (e.name === 'AbortError' || signal.aborted) {
+        broadcastVaultChanged();
+        return { ok: false, aborted: true };
+      }
+      console.error('[vault:rescanHistory personal-vault error]', e);
+      return { ok: false, error: String(e.message || e) };
+    } finally {
+      if (activeScanAbortController === abortController) {
+        activeScanAbortController = null;
+      }
+    }
+  });
+
+  ipcMain.handle('vault:cancelRescan', () => {
+    if (activeScanAbortController) {
+      activeScanAbortController.abort();
+      activeScanAbortController = null;
+      return { ok: true };
+    }
+    return { ok: false };
   });
 }
 

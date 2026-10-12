@@ -3,6 +3,7 @@ import { formatDate, formatSize } from '../utils/format';
 import { formatFolderSummary } from '../utils/folderSummary';
 import { sanitizeFolderPath } from '../utils/pathUtils';
 import { useI18n } from '../context/I18nContext';
+import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../constants/vaultConstants';
 import {
   buildDragPayload,
   isValidDropTarget,
@@ -161,10 +162,8 @@ export function BrowserScreen({
     counts: currentFolderCounts,
     t,
   });
-  const trash_root = trashFolder || '/Rác/';
-  const isTrash =
-    currentFolder === trash_root ||
-    (typeof currentFolder === 'string' && currentFolder.startsWith(trash_root));
+  const trash_root = trashFolder || DEFAULT_TRASH_FOLDER;
+  const isTrash = isTrashPath(currentFolder, trash_root);
   const empty = !loading && folders.length === 0 && files.length === 0;
   const [menu, setMenu] = useState(null);
   const [dragTargetFolder, setDragTargetFolder] = useState(null);
@@ -630,6 +629,7 @@ export function BrowserScreen({
             <FileGridCard
               key={file.messageId}
               file={file}
+              currentFolder={currentFolder}
               selected={selectedIds?.has(file.messageId)}
               draggable={!readonly && !isTrash}
               onDragStart={(e) => handleItemDragStart(e, 'file', file)}
@@ -671,17 +671,32 @@ export function BrowserScreen({
               <tr className="border-b border-[var(--gd-border)] text-left text-xs font-medium text-[var(--gd-text-secondary)]">
                 <th className="w-12 px-3 py-2" />
                 <th className="px-3 py-2">
-                  <SortHeader active={sortField === 'name'} direction={sortDirection} onClick={() => onToggleSort('name')}>
+                  <SortHeader
+                    active={sortField === 'name'}
+                    direction={sortDirection}
+                    onClick={() => onToggleSort('name')}
+                    label={t('colName')}
+                  >
                     {t('colName')}
                   </SortHeader>
                 </th>
                 <th className="hidden w-52 px-3 py-2 md:table-cell whitespace-nowrap">
-                  <SortHeader active={sortField === 'mtime'} direction={sortDirection} onClick={() => onToggleSort('mtime')}>
+                  <SortHeader
+                    active={sortField === 'mtime'}
+                    direction={sortDirection}
+                    onClick={() => onToggleSort('mtime')}
+                    label={t('colModified')}
+                  >
                     {t('colModified')}
                   </SortHeader>
                 </th>
                 <th className="hidden w-28 px-3 py-2 sm:table-cell whitespace-nowrap">
-                  <SortHeader active={sortField === 'size'} direction={sortDirection} onClick={() => onToggleSort('size')}>
+                  <SortHeader
+                    active={sortField === 'size'}
+                    direction={sortDirection}
+                    onClick={() => onToggleSort('size')}
+                    label={t('colSize')}
+                  >
                     {t('colSize')}
                   </SortHeader>
                 </th>
@@ -739,6 +754,7 @@ export function BrowserScreen({
                 <FileTableRow
                   key={file.messageId}
                   file={file}
+                  currentFolder={currentFolder}
                   selected={selectedIds?.has(file.messageId)}
                   isDragging={draggingItemKey === `file:${file.messageId}`}
                   readonly={readonly}
@@ -792,12 +808,56 @@ export function BrowserScreen({
   );
 }
 
-function SortHeader({ active, direction, onClick, children }) {
+function SortHeader({ active, direction, onClick, label, children }) {
+  const { t } = useI18n();
+  const columnTitle = label || (typeof children === 'string' ? children : '');
+
+  const tooltipText = active
+    ? (direction === 'asc' ? t('sortHeaderTooltipAsc') : t('sortHeaderTooltipDesc'))
+    : t('sortHeaderTooltipDefault', { column: columnTitle });
+
   return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-1 hover:text-[var(--gd-text)]">
-      {children}
-      {active && <span className="text-[var(--gd-primary)]">{direction === 'asc' ? '↑' : '↓'}</span>}
-    </button>
+    <div className="relative group/sort inline-block">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1.5 py-1 px-2 -mx-2 rounded-md font-medium text-xs transition-all duration-150 cursor-pointer select-none ${
+          active
+            ? 'text-[var(--gd-primary)] font-semibold bg-[var(--gd-primary-light)]/40 hover:bg-[var(--gd-primary-light)]/70'
+            : 'text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] hover:bg-[var(--gd-hover)]'
+        }`}
+      >
+        <span>{children}</span>
+        {active ? (
+          <span className="shrink-0 transition-transform duration-200" aria-hidden="true">
+            {direction === 'asc' ? (
+              <svg className="h-3.5 w-3.5 text-[var(--gd-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            ) : (
+              <svg className="h-3.5 w-3.5 text-[var(--gd-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M19 12l-7 7-7-7" />
+              </svg>
+            )}
+          </span>
+        ) : (
+          <span className="shrink-0 opacity-0 group-hover/sort:opacity-50 transition-opacity duration-150 text-[var(--gd-text-secondary)]" aria-hidden="true">
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 15l5 5 5-5M7 9l5-5 5 5" />
+            </svg>
+          </span>
+        )}
+      </button>
+
+      {/* Modern Floating Tooltip */}
+      <div
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full mt-1.5 z-40 hidden group-hover/sort:flex flex-col items-start whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+      >
+        <span className="absolute -top-1 left-3.5 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+        <span className="relative z-10">{tooltipText}</span>
+      </div>
+    </div>
   );
 }
 
@@ -991,6 +1051,7 @@ const FolderTableRow = memo(function FolderTableRow({
 
 const FileTableRow = memo(function FileTableRow({
   file,
+  currentFolder,
   selected,
   isDragging,
   readonly,
@@ -1010,6 +1071,9 @@ const FileTableRow = memo(function FileTableRow({
   onDeleteForeverFile,
   onShowFileMenu,
 }) {
+  const fileDir = file.path ? file.path.substring(0, file.path.lastIndexOf('/') + 1) : '';
+  const showPath = Boolean(fileDir && currentFolder && fileDir !== currentFolder);
+
   return (
     <tr
       id={`vault-file-${file.messageId}`}
@@ -1033,12 +1097,19 @@ const FileTableRow = memo(function FileTableRow({
       <td className="px-3 py-2.5 min-w-0">
         <div className="flex items-center gap-3 min-w-0">
           {fileTypeIcon(file.name, 'h-6 w-6 shrink-0')}
-          <span
-            className={`truncate ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
-            title={file.name}
-          >
-            {file.name}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span
+              className={`truncate block ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
+              title={file.name}
+            >
+              {file.name}
+            </span>
+            {showPath && (
+              <div className="truncate text-[11px] font-normal text-[var(--gd-text-secondary)]" title={file.path}>
+                {file.path}
+              </div>
+            )}
+          </div>
         </div>
       </td>
       <td className="hidden w-52 px-3 py-2.5 text-[var(--gd-text-secondary)] md:table-cell whitespace-nowrap">
@@ -1065,6 +1136,7 @@ const FileTableRow = memo(function FileTableRow({
 }, (prev, next) => {
   return (
     prev.file === next.file &&
+    prev.currentFolder === next.currentFolder &&
     prev.selected === next.selected &&
     prev.isDragging === next.isDragging &&
     prev.readonly === next.readonly &&
@@ -1167,6 +1239,7 @@ const FolderGridCard = memo(function FolderGridCard({
 
 const FileGridCard = memo(function FileGridCard({
   file,
+  currentFolder,
   selected,
   onMouseDown,
   onClick,
@@ -1185,6 +1258,8 @@ const FileGridCard = memo(function FileGridCard({
   const ext = fileExt(file.name);
   const isImage = IMAGE_EXT.has(ext || '');
   const thumbSrc = isImage && file.localPath ? `file://${file.localPath}` : null;
+  const fileDir = file.path ? file.path.substring(0, file.path.lastIndexOf('/') + 1) : '';
+  const showPath = Boolean(fileDir && currentFolder && fileDir !== currentFolder);
 
   return (
     <div
@@ -1208,11 +1283,19 @@ const FileGridCard = memo(function FileGridCard({
     >
       <div className="gd-grid-file-header">
         {fileTypeIcon(file.name, 'h-5 w-5 shrink-0')}
-        <span
-          className={`min-w-0 flex-1 truncate text-sm ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
-        >
-          {file.name}
-        </span>
+        <div className="min-w-0 flex-1">
+          <span
+            className={`truncate block text-sm ${selected ? 'font-medium text-[var(--gd-primary)]' : 'text-[var(--gd-text)]'}`}
+            title={file.name}
+          >
+            {file.name}
+          </span>
+          {showPath && (
+            <div className="truncate text-[10px] font-normal text-[var(--gd-text-secondary)]" title={file.path}>
+              {file.path}
+            </div>
+          )}
+        </div>
         <GridTrashActions
           onRestore={onRestore}
           onDeleteForever={onDeleteForever}
@@ -1235,6 +1318,7 @@ const FileGridCard = memo(function FileGridCard({
 }, (prev, next) => {
   return (
     prev.file === next.file &&
+    prev.currentFolder === next.currentFolder &&
     prev.selected === next.selected &&
     prev.isDragging === next.isDragging &&
     prev.actionsDisabled === next.actionsDisabled &&

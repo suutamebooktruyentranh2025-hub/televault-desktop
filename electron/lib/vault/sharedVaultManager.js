@@ -27,35 +27,43 @@ class SharedVaultManager {
     this._vaults = [];
     /** @type {Map<number, { db: ReturnType<typeof openIndexDb>, channel: ChannelService, scanned: boolean, vaultService?: import('./vaultService').VaultService }>} */
     this._instances = new Map();
+    this._discovering = false;
   }
 
   async discover() {
-    const from_network = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
-    const by_id = new Map(from_network.map((vault_item) => [vault_item.chatId, vault_item]));
+    if (this._discovering) return;
+    this._discovering = true;
+    try {
+      const from_network = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
+      const by_id = new Map(from_network.map((vault_item) => [vault_item.chatId, vault_item]));
 
-    const candidate_ids = new Set([
-      ...from_network.map((vault_item) => vault_item.chatId),
-      ...this._vaults.map((vault_item) => vault_item.chatId),
-      ...this._listKnownSharedChatIds(),
-    ]);
-    candidate_ids.delete(this.ownChatId);
+      const knownOnDisk = new Set(this._listKnownSharedChatIds());
+      const candidate_ids = new Set([
+        ...from_network.map((vault_item) => vault_item.chatId),
+        ...this._vaults.map((vault_item) => vault_item.chatId),
+        ...knownOnDisk,
+      ]);
+      candidate_ids.delete(this.ownChatId);
 
-    for (const chat_id of candidate_ids) {
-      if (by_id.has(chat_id)) continue;
-      const verified = await this._verifySharedVaultChat(chat_id);
-      if (verified) by_id.set(chat_id, verified);
-    }
-
-    this._vaults = [...by_id.values()];
-    // Clean up instances for vaults no longer accessible
-    for (const [chatId, inst] of this._instances) {
-      if (!by_id.has(chatId)) {
-        inst.channel.dispose();
-        inst.db.close();
-        this._instances.delete(chatId);
+      for (const chat_id of candidate_ids) {
+        if (by_id.has(chat_id)) continue;
+        const verified = await this._verifySharedVaultChat(chat_id);
+        if (verified) by_id.set(chat_id, verified);
       }
+
+      this._vaults = [...by_id.values()];
+      // Clean up instances only for vaults truly inaccessible and not known on disk
+      for (const [chatId, inst] of this._instances) {
+        if (!by_id.has(chatId) && !knownOnDisk.has(chatId)) {
+          inst.channel.dispose();
+          inst.db.close();
+          this._instances.delete(chatId);
+        }
+      }
+      this.onChange();
+    } finally {
+      this._discovering = false;
     }
-    this.onChange();
   }
 
   /** Chat ids previously synced locally under shared-vaults/<chatId>/ */
@@ -139,11 +147,11 @@ class SharedVaultManager {
    * @param {(n: number) => void} [onProgress]
    * @returns {Promise<number>} messages scanned
    */
-  async forceRescanVault(chatId, onProgress) {
+  async forceRescanVault(chatId, onProgress, opts = {}) {
     const inst = this._ensureInstance(chatId);
     inst.scanned = false;
     inst.channel.listenUpdates(chatId);
-    const scanned = await inst.channel.scanHistory(chatId, onProgress, { forceFull: true });
+    const scanned = await inst.channel.scanHistory(chatId, onProgress, { forceFull: true, ...opts });
     inst.scanned = true;
     inst.channel.onChange(() => this.onChange());
     this.onChange();
@@ -157,15 +165,15 @@ class SharedVaultManager {
    * @param {string} sortDirection
    */
   getFiles(chatId, folderPath) {
-    const inst = this._instances.get(chatId);
+    const inst = this._instances.get(chatId) || this._ensureInstance(chatId);
     if (!inst) return [];
     const { filesInVaultFolder } = require('./fileExport');
     return filesInVaultFolder(inst.db.getAll(), folderPath);
   }
 
   getListing(chatId, folder = '/', sortField = 'name', sortDirection = 'asc') {
-    const inst = this._instances.get(chatId);
-    if (!inst) return { ok: false, error: 'not_scanned', folders: [], files: [] };
+    const inst = this._instances.get(chatId) || this._ensureInstance(chatId);
+    if (!inst) return { ok: false, error: 'not_found', folders: [], files: [] };
     const all = inst.db.getAll();
     const listing = listFolder(all, folder);
     const sorted = sortFolderListing(listing, all, folder, {
@@ -208,7 +216,7 @@ class SharedVaultManager {
    * @param {string} query
    */
   search(chatId, query) {
-    const inst = this._instances.get(chatId);
+    const inst = this._instances.get(chatId) || this._ensureInstance(chatId);
     if (!inst) return { ok: false, files: [] };
     const folderTags = inst.db.folderTagsIndex();
     const files = inst.db.search({ query, tags: [] }).map((e) => ({
@@ -227,9 +235,15 @@ class SharedVaultManager {
 
   /** @param {number} chatId */
   getStats(chatId) {
-    const inst = this._instances.get(chatId);
+    const inst = this._instances.get(chatId) || this._ensureInstance(chatId);
     if (!inst) return { ok: false, count: 0 };
     return { ok: true, count: inst.db.listVisibleFileCount() };
+  }
+
+  getInstance(chatId) {
+    const numeric_id = Number(chatId);
+    if (!Number.isFinite(numeric_id)) return null;
+    return this._instances.get(numeric_id) || this._ensureInstance(numeric_id);
   }
 
   /**

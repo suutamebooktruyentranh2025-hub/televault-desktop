@@ -65,7 +65,7 @@ async function bootstrapTelegram(opts) {
     filesDirectory: filesDir,
     databaseEncryptionKey: dbKey,
     tdlibParameters: {
-      use_message_database: true,
+      use_message_database: false,
       use_secret_chats: false,
       system_language_code: 'vi',
       application_version: '1.0.0',

@@ -4,13 +4,14 @@ const api = window.televault?.vault;
 
 const STORAGE_KEY_TAGS = 'televault:active_tags';
 
-export function useTagFilter() {
+export function useTagFilter({ chatId = null } = {}) {
+  const storageKey = chatId ? `televault:active_tags:${chatId}` : STORAGE_KEY_TAGS;
   const [tagNames, setTagNames] = useState([]);
   /** @type {[Record<string, string[]>, Function]} */
   const [foldersByTag, setFoldersByTag] = useState({});
   const [activeTags, setActiveTags] = useState(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_TAGS);
+      const raw = localStorage.getItem(storageKey);
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
@@ -19,17 +20,28 @@ export function useTagFilter() {
   });
   const [loading, setLoading] = useState(false);
 
+  // Re-read activeTags if storageKey changes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setActiveTags(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setActiveTags([]);
+    }
+  }, [storageKey]);
+
   // Sync to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_TAGS, JSON.stringify(activeTags));
+      localStorage.setItem(storageKey, JSON.stringify(activeTags));
     } catch {}
-  }, [activeTags]);
+  }, [activeTags, storageKey]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api?.allTags();
+      const result = await api?.allTags({ chatId });
       if (result?.ok) {
         const folders = result.foldersByTag || {};
         const names = [
@@ -37,17 +49,29 @@ export function useTagFilter() {
         ];
         setTagNames(names);
         setFoldersByTag(folders);
-        // Retain only active tags that still exist
-        setActiveTags((prev) => prev.filter((tag) => names.includes(tag)));
+        // Retain only active tags that still exist without recreating array if unchanged
+        setActiveTags((prev) => {
+          if (!prev || prev.length === 0) return prev;
+          const next = prev.filter((tag) => names.includes(tag));
+          if (next.length === prev.length && next.every((t, i) => t === prev[i])) {
+            return prev;
+          }
+          return next;
+        });
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [chatId]);
 
   useEffect(() => {
     void refresh();
-    return api?.onChanged?.(() => void refresh());
+    const unsubVault = api?.onChanged?.(() => void refresh());
+    const unsubShared = window.televault?.sharedVault?.onChanged?.(() => void refresh());
+    return () => {
+      unsubVault?.();
+      unsubShared?.();
+    };
   }, [refresh]);
 
   const toggleTag = useCallback((tag) => {
@@ -57,17 +81,19 @@ export function useTagFilter() {
   }, []);
 
   const clearTags = useCallback(() => {
-    setActiveTags([]);
+    setActiveTags((prev) => (prev.length === 0 ? prev : []));
     try {
-      localStorage.removeItem(STORAGE_KEY_TAGS);
+      localStorage.removeItem(storageKey);
     } catch {}
-  }, []);
+  }, [storageKey]);
+
+  const EMPTY_FOLDERS = useMemo(() => [], []);
 
   // Filter folders: Default to OR (union of all folders matching any selected tag)
   const filteredFolders = useMemo(() => {
-    if (activeTags.length === 0) return [];
+    if (activeTags.length === 0) return EMPTY_FOLDERS;
     if (activeTags.length === 1) {
-      return foldersByTag[activeTags[0]] || [];
+      return foldersByTag[activeTags[0]] || EMPTY_FOLDERS;
     }
     const set = new Set();
     for (const tag of activeTags) {
@@ -76,17 +102,18 @@ export function useTagFilter() {
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [activeTags, foldersByTag]);
+  }, [activeTags, foldersByTag, EMPTY_FOLDERS]);
 
-  const [folderDetails, setFolderDetails] = useState({});
+  const EMPTY_DETAILS = useMemo(() => ({}), []);
+  const [folderDetails, setFolderDetails] = useState(EMPTY_DETAILS);
 
   useEffect(() => {
     if (!filteredFolders.length || !api?.getFoldersDetails) {
-      setFolderDetails({});
+      setFolderDetails((prev) => (Object.keys(prev).length === 0 ? prev : EMPTY_DETAILS));
       return undefined;
     }
     let cancelled = false;
-    api.getFoldersDetails(filteredFolders).then((res) => {
+    api.getFoldersDetails(filteredFolders, { chatId }).then((res) => {
       if (!cancelled && res?.ok && Array.isArray(res.folders)) {
         const map = {};
         for (const f of res.folders) {
@@ -98,7 +125,7 @@ export function useTagFilter() {
     return () => {
       cancelled = true;
     };
-  }, [filteredFolders]);
+  }, [filteredFolders, EMPTY_DETAILS, chatId]);
 
   const filteredFolderItems = useMemo(() => {
     return filteredFolders.map((p) => {

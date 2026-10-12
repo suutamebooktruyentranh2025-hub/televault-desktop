@@ -8,16 +8,10 @@ export function GDriveSettingsTab({
   syncTargetChatId,
   handleSyncTargetChange,
   syncTargets,
-  vaultRescanBusy,
-  gdriveScanPhase,
-  gdriveScanInfo,
-  handleRescanSyncTargetVault,
   gdrivePollInterval,
   handlePollIntervalChange,
   gdriveConflictPolicy,
   handleConflictPolicyChange,
-  gdrivePropagateDeletes,
-  handlePropagateDeletesChange,
   autoSyncAfterScan,
   handleAutoSyncAfterScanChange,
   progressSources,
@@ -86,26 +80,8 @@ export function GDriveSettingsTab({
                       })),
                   ]}
                 />
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <button
-                    type="button"
-                    className={`text-xs px-3 py-1.5 font-semibold rounded-lg transition-all cursor-pointer ${
-                      vaultRescanBusy || gdriveScanPhase === 'vault-scanning'
-                        ? 'bg-[var(--gd-primary)] text-white cursor-default'
-                        : 'bg-[var(--gd-surface)] border border-[var(--gd-border)] hover:bg-[var(--gd-border)]/20 text-[var(--gd-text)]'
-                    }`}
-                    onClick={handleRescanSyncTargetVault}
-                    disabled={vaultRescanBusy || gdriveScanPhase === 'vault-scanning'}
-                  >
-                    {(vaultRescanBusy || gdriveScanPhase === 'vault-scanning')
-                      ? t('gdriveRescanVaultScanning', {
-                        n: gdriveScanInfo?.messagesScanned ?? 0,
-                      })
-                      : t('gdriveRescanVault')}
-                  </button>
-                </div>
-                <div className="text-[11px] text-[var(--gd-text-secondary)] leading-relaxed">
-                  {t('gdriveSyncTargetHint')} {t('gdriveRescanVaultHint')}
+                <div className="text-[11px] text-[var(--gd-text-secondary)] leading-relaxed mt-1">
+                  {t('gdriveSyncTargetHint')}
                 </div>
               </div>
 
@@ -139,29 +115,11 @@ export function GDriveSettingsTab({
                     { value: 'keep_both', label: t('gdriveConflictPolicyKeepBoth') },
                   ]}
                 />
-                <div className="text-[11px] text-[var(--gd-text-secondary)]">
-                  {t('gdriveConflictPolicyHint')}
-                </div>
               </div>
             </div>
           </div>
 
           <div className="mt-4 space-y-2.5 pt-3 border-t border-[var(--gd-border)]">
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-[var(--gd-text)]">
-                  {t('gdrivePropagateDeletes')}
-                </div>
-                <div className="mt-0.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
-                  {t('gdrivePropagateDeletesWarning')}
-                </div>
-              </div>
-              <SettingsToggle
-                checked={gdrivePropagateDeletes}
-                label={t('gdrivePropagateDeletes')}
-                onChange={handlePropagateDeletesChange}
-              />
-            </div>
 
             <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
               <div className="min-w-0">

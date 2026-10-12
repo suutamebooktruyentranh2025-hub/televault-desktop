@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sanitizeFolderPath } from '../utils/pathUtils';
+import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../constants/vaultConstants';
 
 const vaultApi = window.televault?.vault;
 
@@ -9,13 +10,20 @@ const folderListingCache = new Map();
 export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
   const [currentFolder, setCurrentFolder] = useState(() => {
     const saved = localStorage.getItem('televault_current_folder') || '/';
-    return sanitizeFolderPath(saved);
+    const sanitized = sanitizeFolderPath(saved);
+    if (!sanitized || isTrashPath(sanitized)) {
+      return '/';
+    }
+    return sanitized;
   });
   useEffect(() => {
-    localStorage.setItem('televault_current_folder', currentFolder);
+    if (currentFolder && !isTrashPath(currentFolder)) {
+      localStorage.setItem('televault_current_folder', currentFolder);
+    }
   }, [currentFolder]);
 
   const [expandedFolders, setExpandedFolders] = useState(['/']);
+  const [browseScope, setBrowseScopeState] = useState('folders');
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [viewMode, setViewMode] = useState('list');
@@ -24,11 +32,34 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
   const [files, setFiles] = useState([]);
   const [currentFolderCounts, setCurrentFolderCounts] = useState(null);
   const [treeRows, setTreeRows] = useState([]);
-  const [stats, setStats] = useState({ count: 0, trashFolder: '/Rác/' });
+  const [stats, setStats] = useState({ count: 0, trashFolder: DEFAULT_TRASH_FOLDER });
   const [loading, setLoading] = useState(true);
   const activeFetchIdRef = useRef(0);
 
+  const setBrowseScope = useCallback((newScope) => {
+    setBrowseScopeState((prev) => {
+      if (prev === newScope) return prev;
+      if (newScope !== 'folders' && sortField === 'name') {
+        setSortField('size');
+        setSortDirection('desc');
+      }
+      return newScope;
+    });
+  }, [sortField]);
+
   const breadcrumbs = useMemo(() => {
+    if (browseScope === 'stories') {
+      return [
+        { label: rootLabel, path: '/' },
+        { label: '', labelKey: 'scopeStoriesBreadcrumb', labelParams: { n: folders.length }, path: null },
+      ];
+    }
+    if (browseScope === 'files') {
+      return [
+        { label: rootLabel, path: '/' },
+        { label: '', labelKey: 'scopeFilesBreadcrumb', labelParams: { n: files.length }, path: null },
+      ];
+    }
     if (currentFolder === '/') return [{ label: rootLabel, path: '/' }];
     const parts = currentFolder.split('/').filter(Boolean);
     const crumbs = [{ label: rootLabel, path: '/' }];
@@ -39,11 +70,95 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
       });
     }
     return crumbs;
-  }, [currentFolder, rootLabel]);
+  }, [browseScope, folders.length, files.length, currentFolder, rootLabel]);
 
-  // Load listing for the current folder (with SWR caching)
-  const reloadListing = useCallback(async ({ folder = currentFolder, field = sortField, direction = sortDirection, showLoading = false } = {}) => {
-    if (!enabled || !vaultApi?.getListing) {
+  // Load listing for current folder or scope (with SWR caching)
+  const reloadListing = useCallback(async ({
+    scope = browseScope,
+    folder = currentFolder,
+    field = sortField,
+    direction = sortDirection,
+    showLoading = false,
+  } = {}) => {
+    if (!enabled || !vaultApi) {
+      setLoading(false);
+      return;
+    }
+
+    if (scope === 'stories') {
+      if (!vaultApi.getFlatStories) {
+        setLoading(false);
+        return;
+      }
+      const cacheKey = `scope:stories:${field}:${direction}`;
+      const cached = folderListingCache.get(cacheKey);
+      if (cached) {
+        setFolders(cached.folders);
+        setFiles([]);
+        setCurrentFolderCounts(null);
+        setLoading(false);
+      } else if (showLoading) {
+        setLoading(true);
+      }
+      const fetchId = ++activeFetchIdRef.current;
+      try {
+        const res = await vaultApi.getFlatStories({ sortField: field, sortDirection: direction });
+        if (fetchId !== activeFetchIdRef.current) return;
+        if (res?.ok) {
+          folderListingCache.set(cacheKey, {
+            folders: res.folders || [],
+            files: [],
+            counts: null,
+            timestamp: Date.now(),
+          });
+          setFolders(res.folders || []);
+          setFiles([]);
+          setCurrentFolderCounts(null);
+        }
+      } finally {
+        if (fetchId === activeFetchIdRef.current) setLoading(false);
+      }
+      return;
+    }
+
+    if (scope === 'files') {
+      if (!vaultApi.getFlatFiles) {
+        setLoading(false);
+        return;
+      }
+      const cacheKey = `scope:files:${field}:${direction}`;
+      const cached = folderListingCache.get(cacheKey);
+      if (cached) {
+        setFolders([]);
+        setFiles(cached.files);
+        setCurrentFolderCounts(null);
+        setLoading(false);
+      } else if (showLoading) {
+        setLoading(true);
+      }
+      const fetchId = ++activeFetchIdRef.current;
+      try {
+        const res = await vaultApi.getFlatFiles({ sortField: field, sortDirection: direction });
+        if (fetchId !== activeFetchIdRef.current) return;
+        if (res?.ok) {
+          folderListingCache.set(cacheKey, {
+            folders: [],
+            files: res.files || [],
+            counts: null,
+            timestamp: Date.now(),
+          });
+          setFolders([]);
+          setFiles(res.files || []);
+          setCurrentFolderCounts(null);
+        }
+      } finally {
+        if (fetchId === activeFetchIdRef.current) setLoading(false);
+      }
+      return;
+    }
+
+    // Default: scope === 'folders'
+    if (!vaultApi.getListing) {
       setLoading(false);
       return;
     }
@@ -83,7 +198,7 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
         setLoading(false);
       }
     }
-  }, [enabled, currentFolder, sortField, sortDirection]);
+  }, [enabled, browseScope, currentFolder, sortField, sortDirection]);
 
   // Reload tree only when expandedFolders changes
   const reloadTree = useCallback(async () => {
@@ -121,12 +236,23 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
     void reloadTree();
   }, [reloadMetadata, reloadTree]);
 
-  // Fetch listing when folder or sort changes
+  // Fetch listing when scope, folder, or sort changes
   useEffect(() => {
-    const cacheKey = `${currentFolder}:${sortField}:${sortDirection}`;
+    const cacheKey =
+      browseScope === 'stories'
+        ? `scope:stories:${sortField}:${sortDirection}`
+        : browseScope === 'files'
+        ? `scope:files:${sortField}:${sortDirection}`
+        : `${currentFolder}:${sortField}:${sortDirection}`;
     const hasCache = folderListingCache.has(cacheKey);
-    void reloadListing({ folder: currentFolder, field: sortField, direction: sortDirection, showLoading: !hasCache });
-  }, [currentFolder, sortField, sortDirection, reloadListing]);
+    void reloadListing({
+      scope: browseScope,
+      folder: currentFolder,
+      field: sortField,
+      direction: sortDirection,
+      showLoading: !hasCache,
+    });
+  }, [browseScope, currentFolder, sortField, sortDirection, reloadListing]);
 
   // When backend database changes, clear cache and reload all (debounced to avoid event storming)
   useEffect(() => {
@@ -136,7 +262,13 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         folderListingCache.clear();
-        void reloadListing({ folder: currentFolder, field: sortField, direction: sortDirection, showLoading: false });
+        void reloadListing({
+          scope: browseScope,
+          folder: currentFolder,
+          field: sortField,
+          direction: sortDirection,
+          showLoading: false,
+        });
         void reloadTree();
         void reloadMetadata();
       }, 300);
@@ -145,11 +277,14 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
       if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
     };
-  }, [enabled, currentFolder, sortField, sortDirection, reloadListing, reloadTree, reloadMetadata]);
+  }, [enabled, browseScope, currentFolder, sortField, sortDirection, reloadListing, reloadTree, reloadMetadata]);
 
   const goTo = useCallback((folder) => {
     const nextFolder = sanitizeFolderPath(folder);
-    if (nextFolder === currentFolder) return;
+    if (browseScope !== 'folders') {
+      setBrowseScopeState('folders');
+    }
+    if (nextFolder === currentFolder && browseScope === 'folders') return;
 
     const cacheKey = `${nextFolder}:${sortField}:${sortDirection}`;
     const cached = folderListingCache.get(cacheKey);
@@ -167,7 +302,7 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
       setCurrentFolderCounts(null);
     }
     setCurrentFolder(nextFolder);
-  }, [currentFolder, sortField, sortDirection]);
+  }, [currentFolder, sortField, sortDirection, browseScope]);
 
   const toggleFolderExpanded = useCallback((folderPath) => {
     setExpandedFolders((prev) => {
@@ -194,14 +329,22 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
   const reloadAll = useCallback(async () => {
     folderListingCache.clear();
     await Promise.all([
-      reloadListing({ folder: currentFolder, field: sortField, direction: sortDirection, showLoading: true }),
+      reloadListing({
+        scope: browseScope,
+        folder: currentFolder,
+        field: sortField,
+        direction: sortDirection,
+        showLoading: true,
+      }),
       reloadTree(),
       reloadMetadata(),
     ]);
-  }, [currentFolder, sortField, sortDirection, reloadListing, reloadTree, reloadMetadata]);
+  }, [browseScope, currentFolder, sortField, sortDirection, reloadListing, reloadTree, reloadMetadata]);
 
   return {
     currentFolder,
+    browseScope,
+    setBrowseScope,
     folders,
     files,
     currentFolderCounts,
@@ -219,5 +362,6 @@ export function useVault({ enabled = true, rootLabel = 'My Vault' } = {}) {
     toggleSort,
     toggleViewMode,
     refresh: reloadAll,
+    reload: reloadAll,
   };
 }

@@ -78,4 +78,95 @@ describe('VaultService.enqueueUpload', () => {
     assert.equal(res.skipped, true);
     assert.equal(res.reason, 'duplicate');
   });
+
+  test('skips upload when matching destPath is already active in queue', async () => {
+    const filePath = path.join(tmpDir, 'sample3.cbz');
+    fs.writeFileSync(filePath, 'sample 3 content');
+
+    // Simulate an active task in queue
+    vault.queue.tasks = [
+      {
+        kind: 'upload',
+        destPath: '/manga/sample3.cbz',
+        status: 'running',
+        _donePromise: Promise.resolve(),
+      },
+    ];
+
+    const res = await vault.enqueueUpload(filePath, '/manga/sample3.cbz');
+
+    assert.equal(res.skipped, true);
+    assert.equal(res.reason, 'already_queued');
+  });
+
+  test('skips upload when matching destPath is paused in queue', async () => {
+    const filePath = path.join(tmpDir, 'sample3_paused.cbz');
+    fs.writeFileSync(filePath, 'sample 3 paused content');
+
+    vault.queue.tasks = [
+      {
+        kind: 'upload',
+        destPath: '/manga/sample3_paused.cbz',
+        status: 'paused',
+        _donePromise: null,
+      },
+    ];
+
+    const res = await vault.enqueueUpload(filePath, '/manga/sample3_paused.cbz');
+
+    assert.equal(res.skipped, true);
+    assert.equal(res.reason, 'already_queued');
+    await assert.doesNotReject(res.done);
+  });
+
+  test('returns rejecting done promise when active task in queue fails, without unhandled rejection', async () => {
+    const filePath = path.join(tmpDir, 'sample3_fail.cbz');
+    fs.writeFileSync(filePath, 'sample 3 fail content');
+
+    const failedPromise = Promise.reject(new Error('Simulated network error'));
+    failedPromise.catch(() => {});
+
+    vault.queue.tasks = [
+      {
+        kind: 'upload',
+        destPath: '/manga/sample3_fail.cbz',
+        status: 'running',
+        _donePromise: failedPromise,
+      },
+    ];
+
+    const res = await vault.enqueueUpload(filePath, '/manga/sample3_fail.cbz');
+
+    assert.equal(res.skipped, true);
+    assert.equal(res.reason, 'already_queued');
+    await assert.rejects(res.done, /Simulated network error/);
+  });
+
+  test('_awaitUploadComplete resolves immediately when updateMessageSendSucceeded arrives without updateFile', async () => {
+    let updateHandler = null;
+    vault.client = {
+      invoke: async () => ({}),
+      on: (event, handler) => {
+        if (event === 'update') updateHandler = handler;
+      },
+      off: (event, handler) => {
+        if (event === 'update' && updateHandler === handler) updateHandler = null;
+      },
+    };
+
+    const promise = vault._awaitUploadComplete(100, () => {}, null);
+
+    assert.equal(typeof updateHandler, 'function');
+
+    // TDLib emits updateMessageSendSucceeded directly (without separate updateFile completed)
+    updateHandler({
+      _: 'updateMessageSendSucceeded',
+      old_message_id: 100,
+      message: { id: 999 },
+    });
+
+    const realId = await promise;
+    assert.equal(realId, 999);
+  });
 });
+

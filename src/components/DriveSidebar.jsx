@@ -19,6 +19,7 @@ import {
 } from './DriveIcons';
 import { formatWaitTime } from '../utils/format';
 import { DriveSyncIndicator } from './DriveSyncIndicator';
+import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../constants/vaultConstants';
 
 export function DriveSidebar({
   section,
@@ -43,11 +44,8 @@ export function DriveSidebar({
   onNavigateSection,
 }) {
   const { t, locale } = useI18n();
-  const trash_root = trashFolder || '/Rác/';
-  const isTrash =
-    section === 'vault' &&
-    (currentFolder === trash_root ||
-      (typeof currentFolder === 'string' && currentFolder.startsWith(trash_root)));
+  const trash_root = trashFolder || DEFAULT_TRASH_FOLDER;
+  const isTrash = section === 'vault' && isTrashPath(currentFolder, trash_root);
   const [newOpen, setNewOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const newRef = useRef(null);
@@ -122,15 +120,7 @@ export function DriveSidebar({
               active={section === 'vault' && !isTrash}
               icon={<IconHome className="h-5 w-5" />}
               label={t('navVault')}
-              onClick={() => {
-                if (section === 'vault' && !isTrash) {
-                  onNavigate('/');
-                } else if (isTrash) {
-                  onNavigate('/');
-                } else {
-                  onSectionChange('vault');
-                }
-              }}
+              onClick={() => onNavigate('/')}
             />
             <NavItem
               active={section === 'gdrive'}
@@ -154,10 +144,7 @@ export function DriveSidebar({
           active={section === 'vault' && isTrash}
           icon={<IconTrash className="h-5 w-5" />}
           label={t('navTrash')}
-          onClick={() => {
-            onSectionChange('vault');
-            onNavigate(trashFolder);
-          }}
+          onClick={() => onNavigate(trashFolder || DEFAULT_TRASH_FOLDER)}
         />
         <NavItem
           active={section === 'settings'}
@@ -298,19 +285,6 @@ export function DriveSidebar({
                 </button>
               ))}
               <div className="my-1 border-t border-[var(--gd-border)]" />
-              <MenuItem
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m22 2-7 20-4-9-9-4Z" />
-                    <path d="M22 2 11 13" />
-                  </svg>
-                }
-                label={t('checkSpamBot')}
-                onClick={() => {
-                  setAccountOpen(false);
-                  window.televault?.shell?.openExternal?.('https://t.me/Spambot');
-                }}
-              />
               <MenuItem
                 icon={<IconAdd className="h-4 w-4" />}
                 label={t('addNewAccount')}

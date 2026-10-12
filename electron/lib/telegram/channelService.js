@@ -202,29 +202,40 @@ class ChannelService {
   }
 
   async scanHistory(chatId, onProgress, opts = {}) {
+    if (this.client?.invoke && chatId) {
+      this.client.invoke({ _: 'openChat', chat_id: chatId }).catch(() => {});
+    }
     if (opts.forceFull === true) {
-      return this._scanHistoryFull(chatId, onProgress);
+      return this._scanHistoryFull(chatId, onProgress, opts);
     }
     const lastKnown = this.db.getLastMessageId();
     const hasLocalIndex = lastKnown > 0 && this.db.countEntries() > 0;
 
     if (hasLocalIndex) {
-      return this._scanHistoryIncremental(chatId, lastKnown, onProgress);
+      return this._scanHistoryIncremental(chatId, lastKnown, onProgress, opts);
     }
-    return this._scanHistoryFull(chatId, onProgress);
+    return this._scanHistoryFull(chatId, onProgress, opts);
   }
 
   /**
    * Full network history walk — used on first sync or empty local index.
    * Reconciles DB to the complete set of message ids seen on Telegram.
    */
-  async _scanHistoryFull(chatId, onProgress) {
+  async _scanHistoryFull(chatId, onProgress, opts = {}) {
+    const signal = opts?.signal;
     let fromMessageId = 0;
     let scanned = 0;
     let maxId = 0;
     const seenIds = new Set();
 
     while (true) {
+      if (signal?.aborted) {
+        this._emitChange();
+        const err = new Error('Scan aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+
       const page = await this.client.invoke({
         _: 'getChatHistory',
         chat_id: chatId,
@@ -233,6 +244,14 @@ class ChannelService {
         limit: 100,
         only_local: false,
       });
+
+      if (signal?.aborted) {
+        this._emitChange();
+        const err = new Error('Scan aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+
       const messages = page.messages || [];
       if (messages.length === 0) break;
 
@@ -250,6 +269,13 @@ class ChannelService {
       fromMessageId = nextFrom;
       onProgress?.(scanned);
       await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+
+    if (signal?.aborted) {
+      this._emitChange();
+      const err = new Error('Scan aborted');
+      err.name = 'AbortError';
+      throw err;
     }
 
     this.db.reconcileToMessageIds(seenIds);
@@ -340,6 +366,10 @@ class ChannelService {
     if (this._updateHandler) {
       this.client.off('update', this._updateHandler);
     }
+    this._chatId = chatId;
+    if (this.client?.invoke && chatId) {
+      this.client.invoke({ _: 'openChat', chat_id: chatId }).catch(() => {});
+    }
     this._updateHandler = async (u) => {
       try {
         switch (u._) {
@@ -418,6 +448,10 @@ class ChannelService {
     if (this._updateHandler) {
       this.client.off('update', this._updateHandler);
       this._updateHandler = null;
+    }
+    if (this._chatId && this.client?.invoke) {
+      this.client.invoke({ _: 'closeChat', chat_id: this._chatId }).catch(() => {});
+      this._chatId = null;
     }
   }
 

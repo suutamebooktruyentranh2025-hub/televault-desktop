@@ -53,11 +53,108 @@ test('disconnect stops workers and clears all persisted sync state', () => {
   assert.deepEqual(called_actions, [
     'stopPolling',
     'disconnectAuth',
-    'removeSub:folder-1',
-    'clearManifest',
     'clearQueue',
     'clearErrors',
     'state:changes_page_token:',
+    'change',
+  ]);
+});
+
+test('disconnect({ clearSubscriptions: true }) removes subscriptions and clears manifest', () => {
+  const called_actions = [];
+  const sync_service = Object.create(GDriveSyncService.prototype);
+  sync_service.stopPolling = () => called_actions.push('stopPolling');
+  sync_service.auth = { disconnect: () => called_actions.push('disconnectAuth') };
+  sync_service.db = {
+    gdriveSubscriptionsAll: () => [{ driveId: 'folder-1' }],
+    gdriveSubscriptionRemove: (drive_id) => called_actions.push(`removeSub:${drive_id}`),
+    gdriveManifestClear: () => called_actions.push('clearManifest'),
+    gdriveCacheNodesClear: () => called_actions.push('clearCacheNodes'),
+    gdriveSyncQueueClear: () => called_actions.push('clearQueue'),
+    gdriveSyncErrorsClear: () => called_actions.push('clearErrors'),
+    gdriveStateSet: (state_key, state_value) => called_actions.push(`state:${state_key}:${state_value}`),
+  };
+  sync_service.onChange = () => called_actions.push('change');
+
+  sync_service.disconnect({ clearSubscriptions: true });
+
+  assert.deepEqual(called_actions, [
+    'stopPolling',
+    'disconnectAuth',
+    'removeSub:folder-1',
+    'clearManifest',
+    'clearCacheNodes',
+    'state:last_connected_email:',
+    'clearQueue',
+    'clearErrors',
+    'state:changes_page_token:',
+    'change',
+  ]);
+});
+
+test('connect clears subscriptions when logging in with a different Google account', async () => {
+  const called_actions = [];
+  const sync_service = Object.create(GDriveSyncService.prototype);
+  sync_service.isPaused = false;
+  sync_service.isAutoSyncEnabled = () => false;
+  sync_service.auth = {
+    saveCredentials: () => {},
+    authorize: async () => ({ ok: true, email: 'newuser@example.com' }),
+  };
+  sync_service.api = {
+    getChanges: async () => ({ newStartPageToken: 'token-abc' }),
+  };
+  sync_service.db = {
+    gdriveStateGet: (k) => (k === 'last_connected_email' ? 'olduser@example.com' : null),
+    gdriveStateSet: (k, v) => called_actions.push(`state:${k}:${v}`),
+    gdriveSubscriptionsAll: () => [{ driveId: 'folder-1' }],
+    gdriveSubscriptionRemove: (drive_id) => called_actions.push(`removeSub:${drive_id}`),
+    gdriveManifestClear: () => called_actions.push('clearManifest'),
+    gdriveCacheNodesClear: () => called_actions.push('clearCacheNodes'),
+  };
+  sync_service.onChange = () => called_actions.push('change');
+
+  const res = await sync_service.connect('client-id', 'client-secret');
+
+  assert.equal(res.ok, true);
+  assert.deepEqual(called_actions, [
+    'removeSub:folder-1',
+    'clearManifest',
+    'clearCacheNodes',
+    'state:last_connected_email:newuser@example.com',
+    'state:changes_page_token:token-abc',
+    'change',
+  ]);
+});
+
+test('connect preserves subscriptions when logging in with the same Google account', async () => {
+  const called_actions = [];
+  const sync_service = Object.create(GDriveSyncService.prototype);
+  sync_service.isPaused = false;
+  sync_service.isAutoSyncEnabled = () => false;
+  sync_service.auth = {
+    saveCredentials: () => {},
+    authorize: async () => ({ ok: true, email: 'sameuser@example.com' }),
+  };
+  sync_service.api = {
+    getChanges: async () => ({ newStartPageToken: 'token-xyz' }),
+  };
+  sync_service.db = {
+    gdriveStateGet: (k) => (k === 'last_connected_email' ? 'sameuser@example.com' : null),
+    gdriveStateSet: (k, v) => called_actions.push(`state:${k}:${v}`),
+    gdriveSubscriptionsAll: () => [{ driveId: 'folder-1' }],
+    gdriveSubscriptionRemove: (drive_id) => called_actions.push(`removeSub:${drive_id}`),
+    gdriveManifestClear: () => called_actions.push('clearManifest'),
+  };
+  sync_service.onChange = () => called_actions.push('change');
+
+  const res = await sync_service.connect('client-id', 'client-secret');
+
+  assert.equal(res.ok, true);
+  // subscriptions NOT removed!
+  assert.deepEqual(called_actions, [
+    'state:last_connected_email:sameuser@example.com',
+    'state:changes_page_token:token-xyz',
     'change',
   ]);
 });

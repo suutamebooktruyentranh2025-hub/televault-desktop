@@ -3,7 +3,12 @@ const { AccountManager } = require('../auth/AccountManager');
 const tgApiStore = require('../auth/telegramApiCredentialsStore');
 const { TelegramCoordinator } = require('../telegram/telegramCoordinator');
 const path = require('path');
-const { registerVaultHandlers, registerSharedVaultHandlers, broadcastVaultChanged } = require('./vaultHandlers');
+const {
+  registerVaultHandlers,
+  registerSharedVaultHandlers,
+  broadcastVaultChanged,
+  safeBroadcast,
+} = require('./vaultHandlers');
 const { SyncService } = require('../sync/syncService');
 const { registerSyncHandlers } = require('./syncHandlers');
 const { GDriveSyncService } = require('../gdrive/gdriveSyncService');
@@ -30,9 +35,7 @@ function registerSessionHandlers(ctx) {
 
   function broadcastState() {
     const state = buildState();
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('session:changed', state);
-    }
+    safeBroadcast('session:changed', state);
     if (state.phase === 'ready') {
       broadcastVaultChanged();
     }
@@ -154,6 +157,7 @@ function registerSessionHandlers(ctx) {
     getVault: () => telegram.vault,
     getQueue: () => telegram.queue,
     getChannel: () => telegram.channel,
+    getChatId: () => telegram.chatId,
     getSharedVaults: () => telegram.sharedVaults,
     isReady: () => phase === 'ready' && Boolean(telegram.db),
     guardUpload,

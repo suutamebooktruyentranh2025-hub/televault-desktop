@@ -18,7 +18,25 @@ export function useSession() {
   const [state, setState] = useState(defaultState);
 
   const applyState = useCallback((next) => {
-    setState((prev) => ({ ...prev, ...next, loading: false }));
+    if (!next) return;
+    setState((prev) => {
+      let hasChange = false;
+      for (const key of Object.keys(next)) {
+        if (key === 'accounts' || key === 'authDetail') {
+          if (JSON.stringify(prev[key]) !== JSON.stringify(next[key])) {
+            hasChange = true;
+            break;
+          }
+        } else if (prev[key] !== next[key]) {
+          hasChange = true;
+          break;
+        }
+      }
+      if (!hasChange && prev.loading === false) {
+        return prev;
+      }
+      return { ...prev, ...next, loading: false };
+    });
   }, []);
 
   useEffect(() => {

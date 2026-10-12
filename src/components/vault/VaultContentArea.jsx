@@ -9,6 +9,7 @@ import { DuplicatesScreen } from '../../screens/DuplicatesScreen';
 import { DriveBreadcrumb } from '../DriveBreadcrumb';
 import { CreateTagDialog } from '../CreateTagDialog';
 import { useDialog } from '../../context/DialogContext';
+import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../../constants/vaultConstants';
 
 export function VaultContentArea({
   section,
@@ -151,6 +152,34 @@ export function VaultContentArea({
     void handleOpenFile(file);
   }
 
+  const sortedTagFolders = useMemo(() => {
+    const items = [...(tagFilter?.filteredFolderItems || [])];
+    const isShared = section === 'shared-vault';
+    const field = (isShared ? sharedVaults?.sortField : vault?.sortField) || 'name';
+    const dir = (isShared ? sharedVaults?.sortDirection : vault?.sortDirection) || 'asc';
+    items.sort((a, b) => {
+      let cmp = 0;
+      if (field === 'name') {
+        cmp = (a.name || '').localeCompare(b.name || '');
+      } else if (field === 'mtime') {
+        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
+        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
+        cmp = timeA - timeB;
+      } else if (field === 'size') {
+        cmp = (a.size || 0) - (b.size || 0);
+      }
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return items;
+  }, [
+    tagFilter?.filteredFolderItems,
+    section,
+    sharedVaults?.sortField,
+    sharedVaults?.sortDirection,
+    vault?.sortField,
+    vault?.sortDirection,
+  ]);
+
   function renderSharedVault() {
     const noop = () => {};
 
@@ -194,112 +223,148 @@ export function VaultContentArea({
       );
     }
 
+    const activeTagCount = tagFilter?.activeTags?.length || (tagFilter?.activeTag ? 1 : 0);
+    const isTagFiltered = activeTagCount > 0;
+
     return (
-      <BrowserScreen
-        folders={sharedVaults.folders}
-        files={sharedVaults.files}
-        currentFolderCounts={sharedVaults.currentFolderCounts}
-        loading={sharedVaults.loading || sharedVaults.scanning}
-        readonly={true}
-        viewMode={vault.viewMode}
-        sortField={sharedVaults.sortField}
-        sortDirection={sharedVaults.sortDirection}
-        trashFolder="__never_match__"
-        currentFolder={sharedVaults.currentFolder}
-        selectedIds={selectedIds}
-        selectedFolders={selectedFolders}
-        onOpenFolder={(f, explicitPath = null) => {
-          if (explicitPath) {
-            sharedVaults.goTo(explicitPath);
-          } else {
-            const base = sharedVaults.currentFolder.endsWith('/') ? sharedVaults.currentFolder : `${sharedVaults.currentFolder}/`;
-            const parts = base.split('/').filter(Boolean);
-            if (parts.length > 0 && parts[parts.length - 1] === f) {
-              sharedVaults.goTo(base);
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Breadcrumb Bar at the top of Shared Vault content */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--gd-border)] bg-[var(--gd-bg)] min-h-[40px] shrink-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <DriveBreadcrumb
+              crumbs={sharedVaults.breadcrumbs}
+              onNavigate={sharedVaults.goTo}
+              showSingle={true}
+            />
+            {folderSummary?.text && (
+              <span
+                className="text-xs text-[var(--gd-text-secondary)] whitespace-nowrap select-none opacity-75 hidden sm:inline shrink-0"
+                title={folderSummary.tooltip}
+              >
+                • {folderSummary.text}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {isTagFiltered && (
+          <div className="flex items-center justify-between px-4 pt-2.5 pb-2 text-xs text-[var(--gd-text-secondary)] border-b border-[var(--gd-border)] bg-[var(--gd-bg)]">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span>{t('tagsTitle')}:</span>
+              <span className="font-semibold text-[var(--gd-text)]">
+                {(tagFilter.activeTags || [tagFilter.activeTag]).join(', ')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span>{t('tagFolderCount', { n: String(tagFilter.filteredFolders?.length || 0) })}</span>
+              <button
+                type="button"
+                onClick={() => tagFilter.clearTags?.()}
+                className="inline-flex items-center gap-1 rounded-full border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                title={t('clearFilter')}
+              >
+                <span>✕</span>
+                <span>{t('clearFilter')}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        <BrowserScreen
+          folders={isTagFiltered ? sortedTagFolders : sharedVaults.folders}
+          files={isTagFiltered ? [] : sharedVaults.files}
+          currentFolderCounts={isTagFiltered ? null : sharedVaults.currentFolderCounts}
+          loading={sharedVaults.loading || sharedVaults.scanning || (isTagFiltered && tagFilter?.tagFilterLoading)}
+          emptyText={
+            isTagFiltered
+              ? t('tagFoldersEmpty')
+              : sharedVaults.browseScope === 'stories'
+              ? t('scopeStoriesEmpty')
+              : sharedVaults.browseScope === 'files'
+              ? t('scopeFilesEmpty')
+              : undefined
+          }
+          readonly={true}
+          viewMode={vault.viewMode}
+          sortField={sharedVaults.sortField}
+          sortDirection={sharedVaults.sortDirection}
+          trashFolder="__never_match__"
+          currentFolder={sharedVaults.currentFolder}
+          selectedIds={selectedIds}
+          selectedFolders={selectedFolders}
+          onOpenFolder={(f, explicitPath = null) => {
+            if (explicitPath) {
+              sharedVaults.goTo(explicitPath);
             } else {
-              sharedVaults.goTo(`${base}${f}/`);
+              const base = sharedVaults.currentFolder.endsWith('/') ? sharedVaults.currentFolder : `${sharedVaults.currentFolder}/`;
+              const parts = base.split('/').filter(Boolean);
+              if (parts.length > 0 && parts[parts.length - 1] === f) {
+                sharedVaults.goTo(base);
+              } else {
+                sharedVaults.goTo(`${base}${f}/`);
+              }
             }
-          }
-        }}
-        onToggleViewMode={vault.toggleViewMode}
-        onToggleSelect={toggleSelect}
-        onApplyItemSelection={applyItemSelection}
-        onToggleFolderSelect={(name, explicitPath) => {
-          const folderPath = explicitPath || `${sharedVaults.currentFolder}${name}/`;
-          applyItemSelection(
-            `folder:${folderPath}`,
-            { additive: true, range: false },
-            [
-              ...sharedVaults.folders.map((f) => `folder:${f.path || `${sharedVaults.currentFolder}${f.name}/`}`),
+          }}
+          onToggleSort={sharedVaults.toggleSort}
+          onToggleViewMode={vault.toggleViewMode}
+          onToggleSelect={toggleSelect}
+          onApplyItemSelection={applyItemSelection}
+          onToggleFolderSelect={(name, explicitPath) => {
+            const folderPath = explicitPath || `${sharedVaults.currentFolder}${name}/`;
+            applyItemSelection(
+              `folder:${folderPath}`,
+              { additive: true, range: false },
+              [
+                ...sharedVaults.folders.map((f) => `folder:${f.path || `${sharedVaults.currentFolder}${f.name}/`}`),
+                ...sharedVaults.files.map((f) => `file:${f.messageId}`),
+              ],
+            );
+          }}
+          onOpenFile={handleOpenFile}
+          onRenameFile={noop}
+          onRenameFolder={noop}
+          onMoveFile={noop}
+          onMoveFolder={noop}
+          onFolderTags={noop}
+          onTrashFile={noop}
+          onTrashFolder={noop}
+          onRestoreFolder={noop}
+          onDeleteForeverFolder={noop}
+          onRestoreFile={noop}
+          onDeleteForeverFile={noop}
+          onDownload={sharedDownload}
+          onDownloadFolder={sharedDownloadFolder}
+          onSaveAs={noop}
+          onPreview={(file) => setPreviewFile(file)}
+          selectionCount={selectionCount}
+          canDownloadSelection={canDownloadSelection}
+          onClearSelection={clearSelection}
+          onDownloadSelected={async () => {
+            for (const messageId of selectedIds) {
+              await sharedDownload({ messageId });
+            }
+            for (const folderPath of selectedFolders) {
+              const folderName = folderPath.slice(sharedVaults.currentFolder.length, -1);
+              if (folderName) await sharedDownloadFolder(folderName);
+            }
+            clearSelection();
+          }}
+          onSelectAll={() => {
+            const allKeys = [
+              ...sharedVaults.folders.map((f) => `folder:${sharedVaults.currentFolder}${f.name}/`),
               ...sharedVaults.files.map((f) => `file:${f.messageId}`),
-            ],
-          );
-        }}
-        onOpenFile={handleOpenFile}
-        onRenameFile={noop}
-        onRenameFolder={noop}
-        onMoveFile={noop}
-        onMoveFolder={noop}
-        onFolderTags={noop}
-        onTrashFile={noop}
-        onTrashFolder={noop}
-        onRestoreFolder={noop}
-        onDeleteForeverFolder={noop}
-        onRestoreFile={noop}
-        onDeleteForeverFile={noop}
-        onDownload={sharedDownload}
-        onDownloadFolder={sharedDownloadFolder}
-        onSaveAs={noop}
-        onPreview={(file) => setPreviewFile(file)}
-        selectionCount={selectionCount}
-        canDownloadSelection={canDownloadSelection}
-        onClearSelection={clearSelection}
-        onDownloadSelected={async () => {
-          for (const messageId of selectedIds) {
-            await sharedDownload({ messageId });
-          }
-          for (const folderPath of selectedFolders) {
-            const folderName = folderPath.slice(sharedVaults.currentFolder.length, -1);
-            if (folderName) await sharedDownloadFolder(folderName);
-          }
-          clearSelection();
-        }}
-        onSelectAll={() => {
-          const allKeys = [
-            ...sharedVaults.folders.map((f) => `folder:${sharedVaults.currentFolder}${f.name}/`),
-            ...sharedVaults.files.map((f) => `file:${f.messageId}`),
-          ];
-          for (const key of allKeys) {
-            applyItemSelection(key, { additive: true, range: false }, allKeys);
-          }
-        }}
-        hideToolbar={true}
-      />
+            ];
+            for (const key of allKeys) {
+              applyItemSelection(key, { additive: true, range: false }, allKeys);
+            }
+          }}
+          hideToolbar={true}
+        />
+      </div>
     );
   }
 
-  const isTrash =
-    vault.currentFolder === vault.stats?.trashFolder ||
-    (typeof vault.currentFolder === 'string' && vault.currentFolder.startsWith(vault.stats?.trashFolder || '/Rác/'));
-  const sortedTagFolders = useMemo(() => {
-    const items = [...(tagFilter?.filteredFolderItems || [])];
-    const field = vault?.sortField || 'name';
-    const dir = vault?.sortDirection || 'asc';
-    items.sort((a, b) => {
-      let cmp = 0;
-      if (field === 'name') {
-        cmp = (a.name || '').localeCompare(b.name || '');
-      } else if (field === 'mtime') {
-        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
-        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
-        cmp = timeA - timeB;
-      } else if (field === 'size') {
-        cmp = (a.size || 0) - (b.size || 0);
-      }
-      return dir === 'asc' ? cmp : -cmp;
-    });
-    return items;
-  }, [tagFilter?.filteredFolderItems, vault?.sortField, vault?.sortDirection]);
+  const isTrash = isTrashPath(vault.currentFolder, vault.stats?.trashFolder || DEFAULT_TRASH_FOLDER);
 
   const activeTagCount = tagFilter?.activeTags?.length || (tagFilter?.activeTag ? 1 : 0);
   const isTagFiltered =
@@ -368,7 +433,15 @@ export function VaultContentArea({
           files={isTagFiltered ? [] : vault.files}
           currentFolderCounts={isTagFiltered ? null : vault.currentFolderCounts}
           loading={vault.loading || (isTagFiltered && tagFilter.tagFilterLoading)}
-          emptyText={isTagFiltered ? t('tagFoldersEmpty') : undefined}
+          emptyText={
+            isTagFiltered
+              ? t('tagFoldersEmpty')
+              : vault.browseScope === 'stories'
+              ? t('scopeStoriesEmpty')
+              : vault.browseScope === 'files'
+              ? t('scopeFilesEmpty')
+              : undefined
+          }
           viewMode={vault.viewMode}
           sortField={vault.sortField}
           sortDirection={vault.sortDirection}
@@ -543,8 +616,14 @@ export function VaultContentArea({
       )}
 
       {/* 9. Shared Vault */}
-      {section === 'shared-vault' && (
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {visitedSections.has('shared-vault') && (
+        <div
+          className={
+            section === 'shared-vault'
+              ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden'
+              : 'invisible absolute inset-0 pointer-events-none -z-10'
+          }
+        >
           {renderSharedVault()}
         </div>
       )}

@@ -1,4 +1,6 @@
 const {
+  safeSend,
+  safeBroadcast,
   broadcastVaultChanged,
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
@@ -34,9 +36,12 @@ function registerVaultHandlers(ipcMain, ctx) {
 module.exports = {
   registerVaultHandlers,
   registerSharedVaultHandlers,
+  safeSend,
+  safeBroadcast,
   broadcastVaultChanged,
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
   broadcastMoveProgress,
   broadcastDeleteProgress,
 };
+

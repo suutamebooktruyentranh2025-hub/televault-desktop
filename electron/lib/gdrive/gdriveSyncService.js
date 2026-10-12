@@ -224,7 +224,6 @@ class GDriveSyncService {
       allowedExtensions: this.db?.gdriveStateGet?.('allowed_extensions', '') || '',
       tempDownloadDir: this.db?.gdriveStateGet?.('temp_download_dir', '') || '',
       conflictPolicy: this.db?.gdriveStateGet?.('conflict_policy', 'skip') || 'skip',
-      propagateDeletes: this.db?.gdriveStateGet?.('propagate_deletes', '0') === '1',
       autoSyncAfterScan: this.db?.gdriveStateGet?.('auto_sync_after_scan', '1') !== '0',
       syncTargetChatId: this.getSyncTargetChatId(),
       syncTargetChatIdNum: this.vault?.chatId ?? null,
@@ -278,8 +277,36 @@ class GDriveSyncService {
     const result = await this.auth.authorize({ force: opts.force !== false });
     if (result.ok) {
       this.status = 'idle';
-      const { newStartPageToken } = await this.api.getChanges(null);
-      this.db.gdriveStateSet('changes_page_token', newStartPageToken);
+      const lastEmail = (this.db?.gdriveStateGet?.('last_connected_email', '') || '').trim().toLowerCase();
+      const newEmail = (result.email || this.auth?.email || '').trim().toLowerCase();
+
+      // If user switched to a DIFFERENT Google account, wipe previous subscriptions and manifest
+      if (lastEmail && newEmail && lastEmail !== newEmail) {
+        console.log(`[GDriveSyncService] Switched Google accounts from ${lastEmail} to ${newEmail}. Clearing subscriptions & manifest.`);
+        if (typeof this.db?.gdriveSubscriptionsAll === 'function') {
+          for (const sub of this.db.gdriveSubscriptionsAll()) {
+            this.db.gdriveSubscriptionRemove(sub.driveId);
+          }
+        }
+        this.db?.gdriveManifestClear?.();
+        if (typeof this.db?.gdriveCacheNodesClear === 'function') {
+          this.db.gdriveCacheNodesClear();
+        }
+      }
+
+      if (newEmail && typeof this.db?.gdriveStateSet === 'function') {
+        this.db.gdriveStateSet('last_connected_email', newEmail);
+      }
+
+      try {
+        const { newStartPageToken } = await this.api.getChanges(null);
+        if (newStartPageToken) {
+          this.db.gdriveStateSet('changes_page_token', newStartPageToken);
+        }
+      } catch (err) {
+        console.warn('[GDriveSyncService] Could not initialize changes_page_token on connect:', err?.message || err);
+      }
+
       if (!this.isPaused && this.isAutoSyncEnabled()) {
         this._startQueueWorker();
       }
@@ -387,6 +414,25 @@ class GDriveSyncService {
       if (email && typeof this.db?.gdriveTokenSet === 'function') {
         this.db.gdriveTokenSet('email', email);
       }
+      if (email && typeof this.db?.gdriveStateSet === 'function') {
+        const normalizedEmail = email.trim().toLowerCase();
+        const lastEmail = (this.db.gdriveStateGet?.('last_connected_email', '') || '').trim().toLowerCase();
+        if (lastEmail && normalizedEmail && lastEmail !== normalizedEmail) {
+          console.log(`[GDriveSyncService] Switched Google accounts detected in checkConnection (${lastEmail} -> ${normalizedEmail}). Clearing subscriptions & manifest.`);
+          if (typeof this.db?.gdriveSubscriptionsAll === 'function') {
+            for (const sub of this.db.gdriveSubscriptionsAll()) {
+              this.db.gdriveSubscriptionRemove(sub.driveId);
+            }
+          }
+          this.db?.gdriveManifestClear?.();
+          if (typeof this.db?.gdriveCacheNodesClear === 'function') {
+            this.db.gdriveCacheNodesClear();
+          }
+          this.db.gdriveStateSet('last_connected_email', normalizedEmail);
+        } else if (!lastEmail && normalizedEmail) {
+          this.db.gdriveStateSet('last_connected_email', normalizedEmail);
+        }
+      }
       this.lastError = null;
       if (this.status === 'error') {
         this.status = 'idle';
@@ -420,7 +466,7 @@ class GDriveSyncService {
     }
   }
 
-  disconnect({ keepCredentials = true } = {}) {
+  disconnect({ keepCredentials = true, clearSubscriptions = false } = {}) {
     this._lifecycleGeneration = (this._lifecycleGeneration || 0) + 1;
     this.stopPolling();
     this._queueWorkerRunning = false;
@@ -433,12 +479,18 @@ class GDriveSyncService {
     }
     this._retryController?.abort();
     this.auth?.disconnect?.({ keepCredentials });
-    if (typeof this.db?.gdriveSubscriptionsAll === 'function') {
-      for (const sub of this.db.gdriveSubscriptionsAll()) {
-        this.db.gdriveSubscriptionRemove(sub.driveId);
+    if (clearSubscriptions) {
+      if (typeof this.db?.gdriveSubscriptionsAll === 'function') {
+        for (const sub of this.db.gdriveSubscriptionsAll()) {
+          this.db.gdriveSubscriptionRemove(sub.driveId);
+        }
       }
+      this.db?.gdriveManifestClear?.();
+      if (typeof this.db?.gdriveCacheNodesClear === 'function') {
+        this.db.gdriveCacheNodesClear();
+      }
+      this.db?.gdriveStateSet?.('last_connected_email', '');
     }
-    this.db?.gdriveManifestClear?.();
     this.db?.gdriveSyncQueueClear?.();
     this.db?.gdriveSyncErrorsClear?.();
     this.db?.gdriveStateSet?.('changes_page_token', '');

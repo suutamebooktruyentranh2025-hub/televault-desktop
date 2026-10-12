@@ -9,6 +9,25 @@ function toNfc(str) {
 }
 
 /**
+ * Retains the latest entry per unique normalized path.
+ * @param {import('./vaultEntry').VaultEntry[]} entries
+ * @returns {import('./vaultEntry').VaultEntry[]}
+ */
+function dedupeEntriesByPath(entries) {
+  if (!Array.isArray(entries) || entries.length <= 1) return entries;
+  /** @type {Map<string, import('./vaultEntry').VaultEntry>} */
+  const map = new Map();
+  for (const e of entries) {
+    const key = toNfc(e.path);
+    const existing = map.get(key);
+    if (!existing || (e.messageId > existing.messageId)) {
+      map.set(key, e);
+    }
+  }
+  return [...map.values()];
+}
+
+/**
  * @param {import('./vaultEntry').VaultEntry[]} all
  * @param {string} folder
  */
@@ -17,6 +36,7 @@ function listFolder(all, folder) {
     throw new Error('folder must end with /');
   }
 
+  all = dedupeEntriesByPath(all);
   const normFolder = toNfc(folder);
   const folders = new Set();
   /** @type {import('./vaultEntry').VaultEntry[]} */
@@ -50,6 +70,7 @@ function listFolder(all, folder) {
 
 /** @param {import('./vaultEntry').VaultEntry[]} all @param {string} folderPath */
 function folderMtime(all, folderPath) {
+  all = dedupeEntriesByPath(all);
   const normFolder = toNfc(folderPath);
   let latest = null;
   /** @type {import('./vaultEntry').VaultEntry|null} */
@@ -66,6 +87,7 @@ function folderMtime(all, folderPath) {
 
 /** @param {import('./vaultEntry').VaultEntry[]} all @param {string} folderPath */
 function folderSize(all, folderPath) {
+  all = dedupeEntriesByPath(all);
   const normFolder = toNfc(folderPath);
   let total = 0;
   for (const e of all) {
@@ -130,6 +152,7 @@ function sortFolderListing(listing, all, currentFolder, { field, direction, fold
  * @param {string[]} subfolderNames
  */
 function buildFolderListingMetadata(all, currentFolder, subfolderNames = []) {
+  all = dedupeEntriesByPath(all);
   const baseFolder = currentFolder.endsWith('/') ? currentFolder : `${currentFolder}/`;
   const normFolder = toNfc(baseFolder);
 
@@ -296,6 +319,7 @@ function buildVisibleTreeRows(all, expanded) {
  * @param {string} folderPath
  */
 function folderCounts(all, folderPath) {
+  all = dedupeEntriesByPath(all);
   const normPath = toNfc(folderPath.endsWith('/') ? folderPath : `${folderPath}/`);
   const directSubfolders = new Set();
   const allSubfolders = new Set();

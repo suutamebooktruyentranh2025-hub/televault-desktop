@@ -135,11 +135,13 @@ function applyGdriveProgressSnapshot({ destDb, destAccountDir, snapshot }) {
   }
   destDb.gdriveStateSet('sync_target_chat_id', String(vaultChatId));
 
-  const sharedDb = ensureSharedVaultDb(destAccountDir, vaultChatId);
+  const ownVaultChatId = destDb.getVaultChatId();
+  const isPersonalVault = ownVaultChatId != null && Number(ownVaultChatId) === vaultChatId;
+  const targetDb = isPersonalVault ? destDb : ensureSharedVaultDb(destAccountDir, vaultChatId);
   let filesMerged = 0;
   try {
     for (const raw of snapshot.vaultFiles || []) {
-      sharedDb.upsert({
+      targetDb.upsert({
         messageId: raw.messageId,
         path: raw.path,
         size: raw.size,
@@ -152,7 +154,9 @@ function applyGdriveProgressSnapshot({ destDb, destAccountDir, snapshot }) {
       filesMerged += 1;
     }
   } finally {
-    sharedDb.close();
+    if (!isPersonalVault) {
+      targetDb.close();
+    }
   }
 
   return {

@@ -13,13 +13,19 @@ export function DriveBreadcrumb({ crumbs = [], onNavigate, showSingle = false })
 
   const { isCollapsed, firstCrumb, collapsedCrumbs, tailCrumbs } = resolveBreadcrumbs(crumbs, 4);
 
+  const getCrumbLabel = (crumb) => {
+    if (!crumb) return '';
+    if (crumb.labelKey) return t(crumb.labelKey, crumb.labelParams);
+    return crumb.label || '';
+  };
+
   const handleEllipsisClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setMenu({
       x: rect.left,
       y: rect.bottom + 4,
       items: collapsedCrumbs.map((c) => ({
-        label: c.label,
+        label: getCrumbLabel(c),
         icon: <IconFolder className="h-4 w-4 shrink-0 text-[var(--gd-text-secondary)]" />,
         action: () => onNavigate(c.path),
       })),
@@ -34,18 +40,18 @@ export function DriveBreadcrumb({ crumbs = [], onNavigate, showSingle = false })
           {crumbs.length === 1 ? (
             <span
               className="font-semibold text-xs text-[var(--gd-text)] px-1.5 py-0.5 truncate max-w-[130px]"
-              title={firstCrumb.label}
+              title={getCrumbLabel(firstCrumb)}
             >
-              {firstCrumb.label}
+              {getCrumbLabel(firstCrumb)}
             </span>
           ) : (
             <button
               type="button"
               onClick={() => onNavigate(firstCrumb.path)}
               className="rounded px-1.5 py-0.5 text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] hover:bg-[var(--gd-hover)] transition-colors truncate max-w-[130px] cursor-pointer"
-              title={firstCrumb.label}
+              title={getCrumbLabel(firstCrumb)}
             >
-              {firstCrumb.label}
+              {getCrumbLabel(firstCrumb)}
             </button>
           )}
         </span>
@@ -69,24 +75,25 @@ export function DriveBreadcrumb({ crumbs = [], onNavigate, showSingle = false })
       {/* Tail crumbs (Parent and Current Folder) */}
       {tailCrumbs.map((crumb, idx) => {
         const isLast = idx === tailCrumbs.length - 1;
+        const label = getCrumbLabel(crumb);
         return (
-          <span key={crumb.path} className={`flex items-center gap-1 ${isLast ? 'min-w-0 shrink' : 'shrink-0'}`}>
+          <span key={crumb.path || crumb.labelKey || idx} className={`flex items-center gap-1 ${isLast ? 'min-w-0 shrink' : 'shrink-0'}`}>
             <span className="text-[var(--gd-text-secondary)] text-xs opacity-50">›</span>
-            {isLast ? (
+            {isLast || !crumb.path ? (
               <span
                 className="font-semibold text-xs text-[var(--gd-text)] px-1.5 py-0.5 truncate min-w-0 max-w-[220px]"
-                title={crumb.label}
+                title={label}
               >
-                {crumb.label}
+                {label}
               </span>
             ) : (
               <button
                 type="button"
                 onClick={() => onNavigate(crumb.path)}
                 className="rounded px-1.5 py-0.5 text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] hover:bg-[var(--gd-hover)] transition-colors truncate max-w-[160px] cursor-pointer"
-                title={crumb.label}
+                title={label}
               >
-                {crumb.label}
+                {label}
               </button>
             )}
           </span>
