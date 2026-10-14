@@ -1,3 +1,20 @@
+# Release Notes - TeleVault Desktop v0.3.0
+
+**Ngày phát hành / Release Date:** 2026-10-14  
+**Phiên bản / Version:** `v0.3.0` (So sánh với `v0.2.0`)  
+**Mục tiêu chính / Milestone:** Đồng bộ trải nghiệm Kho lưu trữ được chia sẻ (Shared Vault Parity), Quét lại lịch sử Vault có kiểm soát huỷ (Rescan Vault & Cancellation), Tối ưu hoá điều hướng & Keep-Alive DOM, Tự động hoá CI/CD GitHub Actions Matrix Build.
+
+---
+
+## 🌟 Điểm nổi bật v0.3.0 (Release Highlights)
+
+- 🌐 **Đồng bộ tính năng Shared Vault (Chia sẻ với tôi)**: Bổ sung bộ lọc Thẻ (Tag Filter), duyệt Theo thư mục / Bộ truyện / Tệp lẻ (`BrowseScope`), sắp xếp đa chiều và Breadcrumb phân cấp tương tự My Vault.
+- ⚡ **Tối ưu trải nghiệm chuyển Tab & Keep-Alive DOM**: Khắc phục triệt để tình trạng phải nhấn F5 để làm mới dữ liệu khi chuyển tab hoặc mở lại app; lưu bộ đệm tức thì 0ms, giữ nguyên vị trí cuộn và trạng thái cây thư mục.
+- 🔄 **Quét lại lịch sử Vault có huỷ (Rescan Vault & Cancel)**: Hỗ trợ quét lại toàn bộ lịch sử tin nhắn Telegram với thanh hiển thị tiến độ thời gian thực và nút huỷ tác vụ an toàn, hỗ trợ cả My Vault và Shared Vault.
+- 🤖 **CI/CD Tự động với GitHub Actions**: Thiết lập workflow Matrix Build song song cho Windows (bản cài đặt NSIS `.exe`) và macOS (`.dmg`), tự động đóng gói và xuất bản GitHub Release khi gắn thẻ phiên bản (`v*`).
+
+---
+
 # Release Notes - TeleVault Desktop v0.2.0
 
 **Ngày phát hành dự kiến / Release Date:** 2026-09-25  

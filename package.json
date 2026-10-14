@@ -1,6 +1,6 @@
 {
   "name": "televault-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TeleVault — kho file cá nhân trên Telegram (desktop)",
   "main": "electron/main.js",
   "private": true,
