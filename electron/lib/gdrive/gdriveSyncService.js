@@ -157,6 +157,11 @@ class GDriveSyncService {
     }
   }
 
+  clearLastError() {
+    this.lastError = null;
+    if (typeof this.onChange === 'function') this.onChange();
+  }
+
   setPaused(paused) {
     if (this.isPaused === paused) return;
     this.isPaused = paused;

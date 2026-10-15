@@ -540,6 +540,13 @@ function registerGDriveHandlers(ipcMain, ctx) {
     }];
     const mgr = ctx.getSharedVaults?.();
     if (mgr) {
+      if (mgr.getDiscoveredVaults().length === 0 && typeof mgr.discover === 'function') {
+        try {
+          await mgr.discover();
+        } catch (e) {
+          console.warn('[gdrive:getSyncTargets] discover error:', e?.message || e);
+        }
+      }
       for (const vault_item of mgr.getDiscoveredVaults()) {
         // Never offer the personal vault as a "shared" duplicate.
         if (personalChatId != null && Number(vault_item.chatId) === Number(personalChatId)) continue;
@@ -573,9 +580,27 @@ function registerGDriveHandlers(ipcMain, ctx) {
     }
   });
 
+  ipcMain.handle('gdrive:clearLastError', async () => {
+    const svc = ctx.getGDriveSyncService();
+    if (svc && typeof svc.clearLastError === 'function') {
+      svc.clearLastError();
+    }
+    return { ok: true };
+  });
+
+  let activeVaultRescanAbortController = null;
+
   ipcMain.handle('gdrive:rescanSyncTargetVault', async () => {
     const svc = ctx.getGDriveSyncService();
     if (!svc) return { ok: false, error: 'Service not available' };
+    if (activeVaultRescanAbortController) {
+      activeVaultRescanAbortController.abort();
+      activeVaultRescanAbortController = null;
+    }
+    const abortController = new AbortController();
+    activeVaultRescanAbortController = abortController;
+    const signal = abortController.signal;
+
     const wasPaused = svc.isPaused;
     if (!wasPaused) svc.setPaused(true);
     try {
@@ -584,34 +609,67 @@ function registerGDriveHandlers(ipcMain, ctx) {
       // Shared target: use manager forceRescan so session scanned-flag resets too.
       if (target && mgr && typeof mgr.forceRescanVault === 'function') {
         await svc.setSyncTargetChatId(target);
-        svc.scanPhase = 'vault-scanning';
-        svc.scanInfo = { messagesScanned: 0 };
+        svc.vaultRescanBusy = true;
+        svc.vaultRescanInfo = { messagesScanned: 0 };
         broadcastGDriveChanged();
         try {
           const scanned = await mgr.forceRescanVault(Number(target), (n) => {
-            svc.scanInfo = { messagesScanned: n };
+            svc.vaultRescanInfo = { messagesScanned: n };
+            safeBroadcast('vault:scanProgress', { chatId: Number(target), scanned: n });
             broadcastGDriveChanged();
-          });
+          }, { signal });
           await svc.setSyncTargetChatId(target);
+          if (typeof svc.reconcileExistingVaultFiles === 'function') {
+            try {
+              svc.reconcileExistingVaultFiles();
+            } catch (recErr) {
+              console.warn('[GDriveSyncService] Reconcile after shared vault rescan error:', recErr);
+            }
+          }
           const fileCount = svc._vaultEntries().filter(
             (entry) => !isInTrash(entry.path) && !String(entry.path).endsWith('/'),
           ).length;
           return { ok: true, scanned, fileCount, chatId: Number(target) };
+        } catch (err) {
+          if (err.name === 'AbortError' || signal.aborted) {
+            return { ok: false, aborted: true };
+          }
+          throw err;
         } finally {
-          svc.scanPhase = null;
-          svc.scanInfo = null;
+          svc.vaultRescanBusy = false;
+          svc.vaultRescanInfo = null;
           broadcastGDriveChanged();
         }
       }
-      const result = await svc.rescanSyncTargetVault();
+      const targetChatId = svc.vault?.chatId ? Number(svc.vault.chatId) : null;
+      const result = await svc.rescanSyncTargetVault((n) => {
+        if (targetChatId != null) {
+          safeBroadcast('vault:scanProgress', { chatId: targetChatId, scanned: n });
+        }
+      }, { signal });
       broadcastGDriveChanged();
-      return { ok: true, ...result };
+      return result;
     } catch (e) {
       broadcastGDriveChanged();
+      if (e.name === 'AbortError' || signal.aborted) {
+        return { ok: false, aborted: true };
+      }
       return { ok: false, error: String(e.message || e) };
     } finally {
+      if (activeVaultRescanAbortController === abortController) {
+        activeVaultRescanAbortController = null;
+      }
       if (!wasPaused) svc.setPaused(false);
     }
+  });
+
+  ipcMain.handle('gdrive:cancelRescanVault', () => {
+    if (activeVaultRescanAbortController) {
+      activeVaultRescanAbortController.abort();
+      activeVaultRescanAbortController = null;
+      return { ok: true };
+    }
+    return { ok: false };
   });
 
   ipcMain.handle('gdrive:queryCacheFiles', async (_evt, opts = {}) => {

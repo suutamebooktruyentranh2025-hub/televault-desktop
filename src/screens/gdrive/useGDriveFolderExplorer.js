@@ -307,7 +307,7 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
     let timer = null;
     const unsub = window.televault.gdrive.onChanged((snapshot) => {
       const currentPhase = snapshot?.scanPhase || null;
-      const isScanning = Boolean(currentPhase);
+      const isScanning = Boolean(currentPhase) && currentPhase !== 'vault-scanning';
       prevScanPhaseRef.current = currentPhase;
 
       // During active scan, do NOT flood database with tree & summary queries!

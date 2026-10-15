@@ -43,6 +43,8 @@ export function GDriveSyncScreen() {
     syncTargets,
     vaultRescanBusy,
     handleRescanSyncTargetVault,
+    handleCancelRescanVault,
+    rescanProgress,
     gdrivePollInterval,
     handlePollIntervalChange,
     gdriveConflictPolicy,
@@ -51,13 +53,7 @@ export function GDriveSyncScreen() {
     handleAutoSyncAfterScanChange,
     handleStartSync,
     handleReconnect,
-    progressSources,
-    progressSourceId,
-    setProgressSourceId,
-    progressBusy,
-    handleImportProgressFromAccount,
-    handleExportProgress,
-    handleImportProgressZip,
+    handleClearLastError,
     handleSaveFilters,
     gdriveIgnoredExtensions,
     setGdriveIgnoredExtensions,
@@ -115,7 +111,7 @@ export function GDriveSyncScreen() {
 
   const [showLiveScanFeed, setShowLiveScanFeed] = useState(true);
   const [showProcessInspector, setShowProcessInspector] = useState(true);
-  const isScanning = scanBusy || Boolean(gdriveScanPhase);
+  const isScanning = scanBusy || (Boolean(gdriveScanPhase) && gdriveScanPhase !== 'vault-scanning');
 
   const handleClearQueue = useCallback(async () => {
     if (await confirm(t('gdriveSyncQueueClearAllConfirm'))) {
@@ -278,22 +274,64 @@ export function GDriveSyncScreen() {
 
             {/* Right: Status badge & Action Controls */}
             <div className="flex items-center gap-2 flex-wrap shrink-0">
-              {/* Error warning & Reconnect if error */}
-              {gdriveLastError && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 max-w-[320px]">
-                  <span className="text-[11px] text-red-600 dark:text-red-400 truncate font-medium" title={gdriveLastError}>
-                    {gdriveLastError}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleReconnect}
-                    title={t('gdriveBtnReconnectTooltip')}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 transition-all cursor-pointer shrink-0 shadow-2xs active:scale-95"
-                  >
-                    <span>{t('gdriveBtnReconnect')}</span>
-                  </button>
-                </div>
-              )}
+
+              {/* Error warning: clearly separate GDrive OAuth errors from Telegram Vault errors */}
+              {gdriveLastError && (() => {
+                const lower = String(gdriveLastError).toLowerCase();
+                const isDriveAuthError = Boolean(
+                  (lower.includes('invalid_grant') ||
+                    lower.includes('unauthorized') ||
+                    lower.includes('invalid credentials') ||
+                    lower.includes('token refresh failed') ||
+                    lower.includes('401')) &&
+                    !lower.includes('vault')
+                );
+                const isVaultTargetError = Boolean(
+                  lower.includes('vault') || lower.includes('shared vault')
+                );
+
+                return (
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border max-w-[340px] ${
+                    isDriveAuthError
+                      ? 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                      : 'bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-300'
+                  }`}>
+                    <span className="text-[11px] truncate font-medium flex-1 min-w-0" title={gdriveLastError}>
+                      {gdriveLastError}
+                    </span>
+                    {isDriveAuthError ? (
+                      <button
+                        type="button"
+                        onClick={handleReconnect}
+                        title={t('gdriveBtnReconnectTooltip')}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 transition-all cursor-pointer shrink-0 shadow-2xs active:scale-95"
+                      >
+                        <span>{t('gdriveBtnReconnect')}</span>
+                      </button>
+                    ) : isVaultTargetError ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSyncTargetChange('')}
+                        title={t('gdriveBtnResetTargetPersonalTooltip')}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-600 text-white hover:bg-amber-700 transition-all cursor-pointer shrink-0 shadow-2xs active:scale-95"
+                      >
+                        <span>{t('gdriveBtnResetTargetPersonal')}</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleClearLastError}
+                      title={t('gdriveBtnDismissError')}
+                      className="p-0.5 rounded text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                      aria-label={t('gdriveBtnDismissError')}
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Telegram Flood Wait Badge */}
               {telegramFloodWaitSec > 0 && (
@@ -538,7 +576,9 @@ export function GDriveSyncScreen() {
                 t={t}
                 folderExplorer={folderExplorer}
                 onRescanVault={handleRescanSyncTargetVault}
+                onCancelRescanVault={handleCancelRescanVault}
                 rescanBusy={vaultRescanBusy}
+                rescanProgress={rescanProgress}
                 scanPhase={gdriveScanPhase}
               />
             )}
@@ -656,13 +696,6 @@ export function GDriveSyncScreen() {
                   handleConflictPolicyChange={handleConflictPolicyChange}
                   autoSyncAfterScan={autoSyncAfterScan}
                   handleAutoSyncAfterScanChange={handleAutoSyncAfterScanChange}
-                  progressSources={progressSources}
-                  progressSourceId={progressSourceId}
-                  setProgressSourceId={setProgressSourceId}
-                  progressBusy={progressBusy}
-                  handleImportProgressFromAccount={handleImportProgressFromAccount}
-                  handleExportProgress={handleExportProgress}
-                  handleImportProgressZip={handleImportProgressZip}
                   handleSaveFilters={handleSaveFilters}
                   gdriveIgnoredExtensions={gdriveIgnoredExtensions}
                   setGdriveIgnoredExtensions={setGdriveIgnoredExtensions}

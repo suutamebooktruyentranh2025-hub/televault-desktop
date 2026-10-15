@@ -94,7 +94,8 @@ const scannerMethods = {
     return requeued;
   },
 
-  async rescanSyncTargetVault(onProgress) {
+  async rescanSyncTargetVault(onProgress, opts = {}) {
+    const signal = opts?.signal;
     try {
       await this._syncTargetReady;
     } catch {
@@ -105,26 +106,38 @@ const scannerMethods = {
       throw new Error('vault_unavailable');
     }
     const chatId = Number(vault.chatId);
-    this.scanPhase = 'vault-scanning';
-    this.scanInfo = { messagesScanned: 0 };
+    this.vaultRescanBusy = true;
+    this.vaultRescanInfo = { messagesScanned: 0 };
     if (typeof this.onChange === 'function') this.onChange();
     try {
       const scanned = await vault.channel.scanHistory(
         chatId,
         (n) => {
-          this.scanInfo = { messagesScanned: n };
+          this.vaultRescanInfo = { messagesScanned: n };
           if (typeof this.onChange === 'function') this.onChange();
           if (typeof onProgress === 'function') onProgress(n);
         },
-        { forceFull: true },
+        { forceFull: true, signal },
       );
+      if (typeof this.reconcileExistingVaultFiles === 'function') {
+        try {
+          this.reconcileExistingVaultFiles();
+        } catch (recErr) {
+          console.warn('[GDriveSyncService] Reconcile after vault rescan error:', recErr);
+        }
+      }
       const fileCount = this._vaultEntries().filter(
         (entry) => !isInTrash(entry.path) && !String(entry.path).endsWith('/'),
       ).length;
-      return { scanned, fileCount, chatId };
+      return { ok: true, scanned, fileCount, chatId };
+    } catch (e) {
+      if (e.name === 'AbortError' || signal?.aborted) {
+        return { ok: false, aborted: true };
+      }
+      throw e;
     } finally {
-      this.scanPhase = null;
-      this.scanInfo = null;
+      this.vaultRescanBusy = false;
+      this.vaultRescanInfo = null;
       if (typeof this.onChange === 'function') this.onChange();
     }
   },

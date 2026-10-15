@@ -171,6 +171,12 @@ export function HelpDialog({ section = 'vault', onClose }) {
             { icon: '👁️', title: t('helpVaultItem4Title'), body: t('helpVaultItem4Desc') },
             { icon: '🗑️', title: t('helpVaultItem5Title'), body: t('helpVaultItem5Desc') },
             { icon: '🏷️', title: t('helpVaultItem6Title'), body: t('helpVaultItem6Desc') },
+            {
+              icon: '🧩',
+              title: t('helpVaultItem7Title'),
+              body: t('helpVaultItem7Desc'),
+              fullWidth: true,
+            },
           ],
           tip: t('helpVaultTip'),
           note: t('helpVaultNote'),
@@ -254,6 +260,7 @@ export function HelpDialog({ section = 'vault', onClose }) {
                   icon={item.icon}
                   title={item.title}
                   body={item.body}
+                  className={item.fullWidth ? 'col-span-1 md:col-span-2' : ''}
                 />
               ))}
             </div>
@@ -309,16 +316,16 @@ export function HelpDialog({ section = 'vault', onClose }) {
   );
 }
 
-function HelpFeatureCard({ icon, title, body }) {
+function HelpFeatureCard({ icon, title, body, className = '' }) {
   return (
-    <div className="rounded-xl border border-[var(--gd-border)] p-3.5 transition-colors hover:bg-[var(--gd-primary-light)]/20 bg-[var(--gd-surface)] flex flex-col justify-start">
+    <div className={`rounded-xl border border-[var(--gd-border)] p-3.5 transition-colors hover:bg-[var(--gd-primary-light)]/20 bg-[var(--gd-surface)] flex flex-col justify-start ${className}`}>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-base shrink-0">{icon}</span>
         <h4 className="text-xs font-semibold text-[var(--gd-text)] leading-tight">{title}</h4>
       </div>
-      <p className="text-xs leading-relaxed text-[var(--gd-text-secondary)] pl-6">
+      <div className="text-xs leading-relaxed text-[var(--gd-text-secondary)] pl-6 whitespace-pre-line">
         {body}
-      </p>
+      </div>
     </div>
   );
 }

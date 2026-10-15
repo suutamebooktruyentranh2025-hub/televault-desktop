@@ -27,43 +27,45 @@ class SharedVaultManager {
     this._vaults = [];
     /** @type {Map<number, { db: ReturnType<typeof openIndexDb>, channel: ChannelService, scanned: boolean, vaultService?: import('./vaultService').VaultService }>} */
     this._instances = new Map();
-    this._discovering = false;
+    this._discoverPromise = null;
   }
 
   async discover() {
-    if (this._discovering) return;
-    this._discovering = true;
-    try {
-      const from_network = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
-      const by_id = new Map(from_network.map((vault_item) => [vault_item.chatId, vault_item]));
+    if (this._discoverPromise) return this._discoverPromise;
+    this._discoverPromise = (async () => {
+      try {
+        const from_network = await ChannelService.findAllVaultChannels(this.client, this.ownChatId);
+        const by_id = new Map(from_network.map((vault_item) => [vault_item.chatId, vault_item]));
 
-      const knownOnDisk = new Set(this._listKnownSharedChatIds());
-      const candidate_ids = new Set([
-        ...from_network.map((vault_item) => vault_item.chatId),
-        ...this._vaults.map((vault_item) => vault_item.chatId),
-        ...knownOnDisk,
-      ]);
-      candidate_ids.delete(this.ownChatId);
+        const knownOnDisk = new Set(this._listKnownSharedChatIds());
+        const candidate_ids = new Set([
+          ...from_network.map((vault_item) => vault_item.chatId),
+          ...this._vaults.map((vault_item) => vault_item.chatId),
+          ...knownOnDisk,
+        ]);
+        candidate_ids.delete(this.ownChatId);
 
-      for (const chat_id of candidate_ids) {
-        if (by_id.has(chat_id)) continue;
-        const verified = await this._verifySharedVaultChat(chat_id);
-        if (verified) by_id.set(chat_id, verified);
-      }
-
-      this._vaults = [...by_id.values()];
-      // Clean up instances only for vaults truly inaccessible and not known on disk
-      for (const [chatId, inst] of this._instances) {
-        if (!by_id.has(chatId) && !knownOnDisk.has(chatId)) {
-          inst.channel.dispose();
-          inst.db.close();
-          this._instances.delete(chatId);
+        for (const chat_id of candidate_ids) {
+          if (by_id.has(chat_id)) continue;
+          const verified = await this._verifySharedVaultChat(chat_id);
+          if (verified) by_id.set(chat_id, verified);
         }
+
+        this._vaults = [...by_id.values()];
+        // Clean up instances only for vaults truly inaccessible and not known on disk
+        for (const [chatId, inst] of this._instances) {
+          if (!by_id.has(chatId) && !knownOnDisk.has(chatId)) {
+            inst.channel.dispose();
+            inst.db.close();
+            this._instances.delete(chatId);
+          }
+        }
+        this.onChange();
+      } finally {
+        this._discoverPromise = null;
       }
-      this.onChange();
-    } finally {
-      this._discovering = false;
-    }
+    })();
+    return this._discoverPromise;
   }
 
   /** Chat ids previously synced locally under shared-vaults/<chatId>/ */
@@ -258,6 +260,16 @@ class SharedVaultManager {
 
     if (!this._vaults.some((vault_item) => vault_item.chatId === numeric_id)) {
       await this.discover();
+    }
+    if (!this._vaults.some((vault_item) => vault_item.chatId === numeric_id)) {
+      // Direct verification attempt: The chat might exist in Telegram but was not in the first 200 getChats
+      const direct = await this._verifySharedVaultChat(numeric_id);
+      if (direct) {
+        if (!this._vaults.some((v) => v.chatId === direct.chatId)) {
+          this._vaults.push(direct);
+        }
+        this.onChange();
+      }
     }
     if (!this._vaults.some((vault_item) => vault_item.chatId === numeric_id)) {
       throw new Error('Shared vault not found or inaccessible');

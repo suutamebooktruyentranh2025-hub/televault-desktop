@@ -66,7 +66,18 @@ function registerSessionHandlers(ctx) {
           if (!telegram.vault) throw new Error('Personal vault not ready');
           return telegram.vault;
         }
-        const mgr = telegram.sharedVaults;
+        if (telegram.chatId != null && Number(chatId) === Number(telegram.chatId)) {
+          if (!telegram.vault) throw new Error('Personal vault not ready');
+          return telegram.vault;
+        }
+        let mgr = telegram.sharedVaults;
+        if (!mgr) {
+          // Wait up to 5s if telegram is currently initializing shared vaults on boot
+          for (let i = 0; i < 50 && !mgr; i++) {
+            await new Promise((r) => setTimeout(r, 100));
+            mgr = telegram.sharedVaults;
+          }
+        }
         if (!mgr) throw new Error('Shared vaults not ready');
         if (!telegram.queue) throw new Error('Transfer queue not ready');
         return mgr.ensureUploadVault(chatId, {

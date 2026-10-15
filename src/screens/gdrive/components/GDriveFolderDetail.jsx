@@ -159,12 +159,8 @@ export function GDriveFolderDetail({
   loading,
   actionBusyId,
   syncFolderBusy,
-  syncAllBusy,
-  reconcileBusy,
   handleSyncFile,
   handleSyncFolder,
-  handleSyncAllPending,
-  handleReconcileExisting,
   handleOpenInVault,
   navigateToFolder,
   selectedFolderId,
@@ -222,52 +218,7 @@ export function GDriveFolderDetail({
           </label>
         </div>
 
-        {/* Right: Folder Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Add folder to sync queue */}
-          {selectedFolderId !== 'root' && (
-            <button
-              type="button"
-              onClick={() => handleSyncFolder(selectedFolderId, false)}
-              disabled={!!syncFolderBusy}
-              title={t('gdriveBtnSyncFolderTooltip')}
-              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--gd-primary)] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer font-medium flex items-center gap-1.5 shadow-2xs transition-all active:scale-98"
-            >
-              {syncFolderBusy === selectedFolderId ? (
-                <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              ) : (
-                <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-              )}
-              <span>{t('gdriveBtnSyncFolder')}</span>
-            </button>
-          )}
 
-          {/* Reconcile */}
-          <button
-            type="button"
-            onClick={handleReconcileExisting}
-            disabled={reconcileBusy || loading}
-            title={t('gdriveCacheReconcileTooltip')}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] hover:bg-[var(--gd-surface-hover)] text-[var(--gd-text)] disabled:opacity-50 cursor-pointer font-medium flex items-center gap-1.5 shadow-2xs transition-colors"
-          >
-            {reconcileBusy ? (
-              <svg className="animate-spin h-3.5 w-3.5 text-[var(--gd-primary)]" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            ) : (
-              <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
-            <span>{reconcileBusy ? t('gdriveCacheBtnReconciling') : t('gdriveCacheBtnReconcile')}</span>
-          </button>
-        </div>
       </div>
 
       {/* Table */}

@@ -167,4 +167,39 @@ describe('SharedVaultManager', () => {
 
     mgr.dispose();
   });
+
+  test('ensureUploadVault recovers via direct verification when chat was omitted from getChats', async () => {
+    // getChats returns empty, but direct getChat(300) succeeds and is a vault channel.
+    const client = makeMockClient(
+      [],
+      { 300: { id: 300, title: 'Direct Vault', type: { _: 'chatTypeSupergroup', is_channel: true, supergroup_id: 30 } } },
+      { 30: { description: '#televault-v1' } },
+    );
+
+    const mgr = new SharedVaultManager({
+      client,
+      ownChatId: 100,
+      userDataPath: tmpDir,
+      onChange: () => {},
+    });
+    // Initial discover finds nothing
+    await mgr.discover();
+    assert.equal(mgr.getDiscoveredVaults().length, 0);
+
+    const fake_db = { getAll: () => [], close: () => {} };
+    const fake_channel = { listenUpdates: () => {}, dispose: () => {}, onChange: () => {} };
+    mgr.scanVault = async (chatId) => {
+      const id = Number(chatId);
+      mgr._instances.set(id, { db: fake_db, channel: fake_channel, scanned: true });
+    };
+
+    const queue = { add: () => Promise.resolve(), cancel: () => {}, onStatusChange: null };
+    // ensureUploadVault should directly verify chat 300 and succeed
+    const vault = await mgr.ensureUploadVault(300, { queue });
+    assert.equal(vault.chatId, 300);
+    assert.equal(mgr.getDiscoveredVaults().length, 1);
+    assert.equal(mgr.getDiscoveredVaults()[0].title, 'Direct Vault');
+
+    mgr.dispose();
+  });
 });

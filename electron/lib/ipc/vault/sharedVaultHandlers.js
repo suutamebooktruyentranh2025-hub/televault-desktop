@@ -4,6 +4,85 @@ const { shell } = require('electron');
 const { resolveSaveAsDirectory, folderExportName, copyToSaveDirectory, uniqueDestPath } = require('../../vault/fileExport');
 const { TransferTask } = require('../../transfer/transferQueue');
 
+async function downloadSharedEntry(client, chatId, entry, report, signal, task) {
+  if (Array.isArray(entry.parts) && entry.parts.length > 1) {
+    const { runMultiPartDownload } = require('../../vault/multiPartDownload');
+    const { sha256Stream } = require('../../vault/streamHash');
+    return runMultiPartDownload({
+      client,
+      chatId,
+      channel: {
+        tdFileIdFromMessage: (m) => {
+          const doc = m?.content?.document;
+          const inner = doc?.document ?? doc;
+          return inner?.id ?? doc?.id ?? null;
+        },
+      },
+      entry,
+      report,
+      signal,
+      task,
+      tdId: (v) => (typeof v === 'number' ? v : Number.parseInt(v, 10) || -1),
+      sha256OfAsync: (fp, rep, sig) => sha256Stream(fp, rep, sig),
+      stallTimeoutMs: 120_000,
+    });
+  }
+
+  const msg = await client.invoke({ _: 'getMessage', chat_id: chatId, message_id: entry.messageId });
+  const doc = msg?.content?.document;
+  const inner = doc?.document ?? doc;
+  const fileId = inner?.id ?? doc?.id;
+  if (fileId == null) throw new Error('Tin nhắn không có file đính kèm');
+
+  const fileInfo = await client.invoke({ _: 'getFile', file_id: fileId });
+  const cached = fileInfo.local || {};
+  if (cached.is_downloading_completed && cached.path && fs.existsSync(cached.path)) {
+    return cached.path;
+  }
+
+  return new Promise((resolve, reject) => {
+    let aborted = false;
+    const timeout = setTimeout(() => {
+      client.off('update', handler);
+      reject(new Error('Download timeout — kiểm tra kết nối mạng'));
+    }, 30 * 60 * 1000);
+
+    const onAbort = () => {
+      aborted = true;
+      void client.invoke({ _: 'cancelDownloadFile', file_id: fileId }).catch(() => {});
+      clearTimeout(timeout);
+      client.off('update', handler);
+      reject(new Error('Người dùng đã hủy quá trình tải'));
+    };
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort);
+    }
+
+    const handler = (u) => {
+      if (u._ !== 'updateFile') return;
+      const file = u.file;
+      if (file.id !== fileId) return;
+      const local = file.local || {};
+      if (file.size > 0) report(local.downloaded_size / file.size);
+      if (local.is_downloading_completed) {
+        clearTimeout(timeout);
+        client.off('update', handler);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve(local.path);
+      }
+    };
+
+    client.on('update', handler);
+    client.invoke({ _: 'downloadFile', file_id: fileId, priority: 32, synchronous: false }).catch((e) => {
+      clearTimeout(timeout);
+      client.off('update', handler);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      reject(e);
+    });
+  });
+}
+
 function registerSharedVaultHandlers(ipcMain, ctx) {
   ipcMain.handle('sharedVault:list', () => {
     const mgr = ctx.getSharedVaults();
@@ -85,60 +164,7 @@ function registerSharedVaultHandlers(ipcMain, ctx) {
           metadata: { vaultPath: entry.path },
           run: async (report, signal) => {
             report(0);
-            const msg = await client.invoke({ _: 'getMessage', chat_id: chatId, message_id: messageId });
-            const fileId = msg?.content?.document?.document?.id;
-            if (fileId == null) throw new Error('Tin nhắn không có file đính kèm');
-
-            const fileInfo = await client.invoke({ _: 'getFile', file_id: fileId });
-            const cached = fileInfo.local || {};
-            let localPath = null;
-
-            if (cached.is_downloading_completed && cached.path && fs.existsSync(cached.path)) {
-              localPath = cached.path;
-            } else {
-              localPath = await new Promise((resolve, reject) => {
-                let aborted = false;
-                const timeout = setTimeout(() => {
-                  client.off('update', handler);
-                  reject(new Error('Download timeout — kiểm tra kết nối mạng'));
-                }, 30 * 60 * 1000);
-
-                const onAbort = () => {
-                  aborted = true;
-                  void client.invoke({ _: 'cancelDownloadFile', file_id: fileId }).catch(() => {});
-                  clearTimeout(timeout);
-                  client.off('update', handler);
-                  reject(new Error('Người dùng đã hủy quá trình tải'));
-                };
-                if (signal) {
-                  if (signal.aborted) return onAbort();
-                  signal.addEventListener('abort', onAbort);
-                }
-
-                const handler = (u) => {
-                  if (u._ !== 'updateFile') return;
-                  const file = u.file;
-                  if (file.id !== fileId) return;
-                  const local = file.local || {};
-                  if (file.size > 0) report(local.downloaded_size / file.size);
-                  if (local.is_downloading_completed) {
-                    clearTimeout(timeout);
-                    client.off('update', handler);
-                    if (signal) signal.removeEventListener('abort', onAbort);
-                    resolve(local.path);
-                  }
-                };
-
-                client.on('update', handler);
-                client.invoke({ _: 'downloadFile', file_id: fileId, priority: 32, synchronous: false }).catch((e) => {
-                  clearTimeout(timeout);
-                  client.off('update', handler);
-                  if (signal) signal.removeEventListener('abort', onAbort);
-                  reject(e);
-                });
-              });
-            }
-
+            const localPath = await downloadSharedEntry(client, chatId, entry, report, signal, task);
             if (!localPath) throw new Error('Không thể tải file về cục bộ');
             report(1);
 
@@ -183,68 +209,7 @@ function registerSharedVaultHandlers(ipcMain, ctx) {
         metadata: { vaultPath: info.entry.path },
         run: async (report, signal) => {
           report(0);
-          const msg = await client.invoke({ _: 'getMessage', chat_id: chatId, message_id: messageId });
-          const fileId = msg?.content?.document?.document?.id;
-          if (fileId == null) throw new Error('Tin nhắn không có file đính kèm');
-
-          const fileInfo = await client.invoke({ _: 'getFile', file_id: fileId });
-          const cached = fileInfo.local || {};
-          let localPath = null;
-
-          if (cached.is_downloading_completed && cached.path && fs.existsSync(cached.path)) {
-            localPath = cached.path;
-          } else {
-            localPath = await new Promise((resolve, reject) => {
-              let aborted = false;
-              const timeout = setTimeout(() => {
-                client.off('update', handler);
-                reject(new Error('Download timeout — kiểm tra kết nối mạng'));
-              }, 30 * 60 * 1000);
-
-              const onAbort = () => {
-                aborted = true;
-                void client.invoke({ _: 'cancelDownloadFile', file_id: fileId }).catch(() => {});
-                clearTimeout(timeout);
-                client.off('update', handler);
-                reject(new Error('Người dùng đã hủy quá trình tải'));
-              };
-              if (signal) {
-                if (signal.aborted) return onAbort();
-                signal.addEventListener('abort', onAbort);
-              }
-
-              const handler = (u) => {
-                if (u._ !== 'updateFile') return;
-                const file = u.file;
-                if (file.id !== fileId) return;
-                const local = file.local || {};
-
-                if (file.size > 0) report(local.downloaded_size / file.size);
-
-                if (local.is_downloading_completed) {
-                  clearTimeout(timeout);
-                  client.off('update', handler);
-                  if (signal) signal.removeEventListener('abort', onAbort);
-                  resolve(local.path);
-                }
-              };
-
-              client.on('update', handler);
-
-              client.invoke({
-                _: 'downloadFile',
-                file_id: fileId,
-                priority: 32,
-                synchronous: false,
-              }).catch((e) => {
-                clearTimeout(timeout);
-                client.off('update', handler);
-                if (signal) signal.removeEventListener('abort', onAbort);
-                reject(e);
-              });
-            });
-          }
-
+          const localPath = await downloadSharedEntry(client, chatId, info.entry, report, signal, task);
           if (!localPath) throw new Error('Không thể tải file về cục bộ');
 
           report(1);

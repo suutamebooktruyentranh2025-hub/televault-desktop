@@ -3,7 +3,7 @@ import { GDriveCacheSummaryBar } from '../components/GDriveCacheSummaryBar';
 import { GDriveFolderTree } from '../components/GDriveFolderTree';
 import { GDriveFolderDetail } from '../components/GDriveFolderDetail';
 
-export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, rescanBusy, scanPhase }) {
+export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, onCancelRescanVault, rescanBusy, rescanProgress, scanPhase }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = Number(localStorage.getItem('televault_gdrive_sidebar_w'));
@@ -63,7 +63,17 @@ export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, resca
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
       {/* Summary Cards */}
-      <GDriveCacheSummaryBar summary={folderExplorer.summary} t={t} onRescanVault={onRescanVault} rescanBusy={rescanBusy} scanPhase={scanPhase} />
+      <GDriveCacheSummaryBar
+        summary={folderExplorer.summary}
+        t={t}
+        onRescanVault={onRescanVault}
+        onCancelRescanVault={onCancelRescanVault}
+        rescanBusy={rescanBusy}
+        rescanProgress={rescanProgress}
+        onSyncAllPending={folderExplorer.handleSyncAllPending}
+        syncAllBusy={folderExplorer.syncAllBusy}
+        scanPhase={scanPhase}
+      />
 
       {/* Split Panel: Folder Tree | Resizer | Detail */}
       <div
@@ -126,12 +136,8 @@ export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, resca
             loading={folderExplorer.loading}
             actionBusyId={folderExplorer.actionBusyId}
             syncFolderBusy={folderExplorer.syncFolderBusy}
-            syncAllBusy={folderExplorer.syncAllBusy}
-            reconcileBusy={folderExplorer.reconcileBusy}
             handleSyncFile={folderExplorer.handleSyncFile}
             handleSyncFolder={folderExplorer.handleSyncFolder}
-            handleSyncAllPending={folderExplorer.handleSyncAllPending}
-            handleReconcileExisting={folderExplorer.handleReconcileExisting}
             handleOpenInVault={folderExplorer.handleOpenInVault}
             navigateToFolder={folderExplorer.navigateToFolder}
             selectedFolderId={folderExplorer.selectedFolderId}

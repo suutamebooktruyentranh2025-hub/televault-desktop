@@ -44,6 +44,17 @@ export function useGDriveSyncState() {
   const [syncTargetChatId, setSyncTargetChatId] = useState('');
   const [syncTargets, setSyncTargets] = useState([]);
   const [vaultRescanBusy, setVaultRescanBusy] = useState(false);
+  const [rescanProgress, setRescanProgress] = useState(0);
+
+  useEffect(() => {
+    if (!window.televault?.vault?.onScanProgress) return undefined;
+    const unsub = window.televault.vault.onScanProgress((payload) => {
+      if (typeof payload?.scanned === 'number') {
+        setRescanProgress(payload.scanned);
+      }
+    });
+    return () => unsub?.();
+  }, []);
   const [progressSources, setProgressSources] = useState([]);
   const [progressSourceId, setProgressSourceId] = useState('');
   const [progressBusy, setProgressBusy] = useState(false);
@@ -313,6 +324,11 @@ export function useGDriveSyncState() {
     }
   }
 
+  async function handleClearLastError() {
+    setGdriveLastError(null);
+    await window.televault?.gdrive?.clearLastError?.();
+  }
+
   async function handleSyncTargetChange(chatId) {
     setSyncTargetChatId(chatId);
     const save_result = await window.televault?.gdrive?.setSyncTarget?.(chatId);
@@ -323,8 +339,9 @@ export function useGDriveSyncState() {
   }
 
   async function handleRescanSyncTargetVault() {
-    if (vaultRescanBusy || gdriveScanPhase === 'vault-scanning') return;
+    if (vaultRescanBusy) return;
     setVaultRescanBusy(true);
+    setRescanProgress(0);
     try {
       const res = await window.televault?.gdrive?.rescanSyncTargetVault?.();
       if (res?.ok) {
@@ -333,14 +350,28 @@ export function useGDriveSyncState() {
           messages: res.scanned ?? 0,
         }));
         await load();
+        if (typeof folderExplorer?.refresh === 'function') {
+          void folderExplorer.refresh();
+        }
+      } else if (res?.aborted) {
+        showToast(t('rescanVaultCancelled'), { variant: 'info' });
       } else {
         showToast(res?.error || t('gdriveRescanVaultError'), { variant: 'error' });
       }
     } catch (e) {
-      showToast(String(e?.message || e) || t('gdriveRescanVaultError'), { variant: 'error' });
+      if (e?.name === 'AbortError' || String(e?.message || e).toLowerCase().includes('abort')) {
+        showToast(t('rescanVaultCancelled'), { variant: 'info' });
+      } else {
+        showToast(String(e?.message || e) || t('gdriveRescanVaultError'), { variant: 'error' });
+      }
     } finally {
       setVaultRescanBusy(false);
+      setRescanProgress(0);
     }
+  }
+
+  async function handleCancelRescanVault() {
+    await window.televault?.gdrive?.cancelRescanVault?.();
   }
 
 
@@ -670,12 +701,15 @@ export function useGDriveSyncState() {
     gdriveAuthUrl,
     disconnectGDrive,
     handleReconnect,
+    handleClearLastError,
     toggleSub,
     removeSub,
     handlePollIntervalChange,
     handleConflictPolicyChange,
     handleSyncTargetChange,
     handleRescanSyncTargetVault,
+    handleCancelRescanVault,
+    rescanProgress,
     handleAutoSyncAfterScanChange,
     checkConnBusy,
     handleCheckConnection,

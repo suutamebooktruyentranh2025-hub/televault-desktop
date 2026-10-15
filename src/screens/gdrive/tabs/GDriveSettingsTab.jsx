@@ -14,13 +14,6 @@ export function GDriveSettingsTab({
   handleConflictPolicyChange,
   autoSyncAfterScan,
   handleAutoSyncAfterScanChange,
-  progressSources,
-  progressSourceId,
-  setProgressSourceId,
-  progressBusy,
-  handleImportProgressFromAccount,
-  handleExportProgress,
-  handleImportProgressZip,
   handleSaveFilters,
   gdriveIgnoredExtensions,
   setGdriveIgnoredExtensions,
@@ -218,57 +211,6 @@ export function GDriveSettingsTab({
                     <IconFolder className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress import/export */}
-          <div className="mt-4 pt-3 border-t border-[var(--gd-border)]">
-            <div className="text-xs font-semibold text-[var(--gd-text)] mb-1">
-              {t('gdriveProgressImportTitle')}
-            </div>
-            <div className="text-[11px] text-[var(--gd-text-secondary)] mb-2">
-              {t('gdriveProgressImportHint')}
-            </div>
-
-            <div className="space-y-2">
-              {progressSources.length > 0 && (
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <SettingsSelect
-                      value={progressSourceId}
-                      onChange={setProgressSourceId}
-                      options={progressSources.map((src) => ({ value: src.id, label: src.name }))}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 bg-[var(--gd-primary)] text-white text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer"
-                    disabled={!progressSourceId || progressBusy}
-                    onClick={handleImportProgressFromAccount}
-                  >
-                    {t('gdriveProgressImportFromAccount')}
-                  </button>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  className="text-xs px-3 py-1.5 bg-[var(--gd-surface)] hover:bg-[var(--gd-border)]/20 border border-[var(--gd-border)] text-[var(--gd-text)] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  onClick={handleExportProgress}
-                  disabled={progressBusy}
-                >
-                  📤 {t('gdriveProgressExport')}
-                </button>
-                <button
-                  type="button"
-                  className="text-xs px-3 py-1.5 bg-[var(--gd-surface)] hover:bg-[var(--gd-border)]/20 border border-[var(--gd-border)] text-[var(--gd-text)] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  onClick={handleImportProgressZip}
-                  disabled={progressBusy}
-                >
-                  📥 {t('gdriveProgressImportZip')}
-                </button>
               </div>
             </div>
           </div>

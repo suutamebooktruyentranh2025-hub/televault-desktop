@@ -7,7 +7,7 @@ function formatSize(bytes) {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-export function GDriveCacheSummaryBar({ summary = {}, t, onRescanVault, rescanBusy, scanPhase }) {
+export function GDriveCacheSummaryBar({ summary = {}, t, onRescanVault, onCancelRescanVault, rescanBusy, rescanProgress = 0, onSyncAllPending, syncAllBusy, scanPhase }) {
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem('televault_gdrive_summary_collapsed') === 'true';
@@ -149,19 +149,44 @@ export function GDriveCacheSummaryBar({ summary = {}, t, onRescanVault, rescanBu
           {t('gdriveCacheUploadedSize', { size: formatSize(summary.syncedSizeBytes) })}
         </div>
         {typeof onRescanVault === 'function' && (
-          <button
-            type="button"
-            onClick={onRescanVault}
-            disabled={rescanBusy || scanPhase === 'vault-scanning'}
-            className="mt-2 w-full text-[11px] px-2 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className={`h-3 w-3 ${(rescanBusy || scanPhase === 'vault-scanning') ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {(rescanBusy || scanPhase === 'vault-scanning')
-              ? t('gdriveRescanVaultScanning', { n: summary.scanProgress || 0 })
-              : t('gdriveRescanVault')}
-          </button>
+          rescanBusy ? (
+            <div className="mt-2 flex items-center justify-between gap-1 w-full text-[11px] px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium shadow-2xs">
+              <div className="flex items-center gap-1.5 min-w-0 truncate">
+                <svg className="h-3 w-3 shrink-0 animate-spin text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="truncate">
+                  {rescanProgress > 0
+                    ? t('gdriveRescanVaultScanning', { n: rescanProgress.toLocaleString() })
+                    : t('gdriveRescanVaultBusy')}
+                </span>
+              </div>
+              {typeof onCancelRescanVault === 'function' && (
+                <button
+                  type="button"
+                  onClick={onCancelRescanVault}
+                  title={t('rescanVaultCancel')}
+                  className="shrink-0 p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 text-emerald-800 dark:text-emerald-200 cursor-pointer transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onRescanVault}
+              className="mt-2 w-full text-[11px] px-2 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {t('gdriveRescanVault')}
+            </button>
+          )
         )}
       </div>
 
@@ -178,9 +203,29 @@ export function GDriveCacheSummaryBar({ summary = {}, t, onRescanVault, rescanBu
         <div className="text-xl font-bold text-sky-600 dark:text-sky-400">
           {pendingCount.toLocaleString()} <span className="text-xs font-normal opacity-70">{t('gdriveUnitFiles')}</span>
         </div>
-        <div className="text-[11px] text-[var(--gd-text-secondary)] mt-2 truncate">
+        <div className="text-[11px] text-[var(--gd-text-secondary)] mt-1 truncate">
           {queuedCount > 0 ? t('gdriveCacheFilesInQueue', { count: queuedCount }) : t('gdriveCacheWaitingQueue')}
         </div>
+        {pendingCount > 0 && typeof onSyncAllPending === 'function' && (
+          <button
+            type="button"
+            onClick={onSyncAllPending}
+            disabled={syncAllBusy}
+            className="mt-2 w-full text-[11px] px-2 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {syncAllBusy ? (
+              <svg className="animate-spin h-3 w-3 text-sky-600 dark:text-sky-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+            ) : (
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            )}
+            <span>{syncAllBusy ? t('gdriveCacheBtnSyncingAll') : t('gdriveCacheBtnSyncAllPending')}</span>
+          </button>
+        )}
       </div>
 
       {/* Card 4: Lỗi & Bỏ qua */}
