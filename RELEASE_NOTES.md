@@ -1,3 +1,22 @@
+# Release Notes - TeleVault Desktop v0.3.1
+
+**Ngày phát hành / Release Date:** 2026-10-15  
+**Phiên bản / Version:** `v0.3.1` (So sánh với `v0.3.0`)  
+**Mục tiêu chính / Milestone:** Tối ưu hóa toàn diện luồng Đồng bộ Google Drive (1-Click Sync & Realtime Rescan), Tinh gọn thanh công cụ Explorer, Bổ sung tài liệu hướng dẫn tệp lớn > 2GB & ghép nối file `.bin`.
+
+---
+
+## 🌟 Điểm nổi bật v0.3.1 (Release Highlights)
+
+- ⚡ **Đồng bộ 1-Click (1-Click Sync All Pending)**: Bổ sung nút `[+ Đồng bộ tất cả file chưa tải]` ngay tại Thẻ "Chưa đồng bộ", đưa toàn bộ tệp vào hàng đợi chỉ với 1 click chuột kèm trạng thái loading spinner trực quan.
+- 🔄 **Tiến độ Quét lại Televault thời gian thực & Huỷ an toàn**: Card "Đã lên Telegram" hiển thị trực tiếp số lượng tin nhắn đã quét (`Đang quét Televault… {n} tin nhắn`) kèm nút huỷ tác vụ tức thời `[✕]` an toàn, tách biệt độc lập với quá trình quét Google Drive.
+- 🧹 **Tinh gọn thanh công cụ Thư mục (Toolbar Streamlining)**: Loại bỏ các nút thừa (`Nhận diện file đã có`, `Thêm vào hàng đợi`) do backend đã tự động nhận diện và đối soát ngầm ở mọi sự kiện (quét Drive, quét Telegram, import link).
+- 🧩 **Trợ giúp & Hướng dẫn Tệp lớn > 2GB & Ghép file `.bin`**: Bổ sung tài liệu chi tiết trong hộp thoại Trợ giúp My Vault, hướng dẫn cơ chế chunking tự động vượt giới hạn 2GB của Telegram và cách ghép nối file (`copy /b` trên Windows, `cat` trên macOS/Linux, 7-Zip).
+- 🛡️ **Cải thiện Shared Vault & Định tuyến IPC**: Tối ưu hóa quản lý phiên và xử lý ngắt kết nối an toàn cho Kho chia sẻ, bổ sung unit test cho `sharedVaultManager`.
+- 🌐 **Chuẩn hóa Quốc tế hóa (i18n)**: Mọi tính năng, nút bấm và nội dung trợ giúp mới được đồng bộ song ngữ đối xứng 100% giữa Tiếng Việt và Tiếng Anh.
+
+---
+
 # Release Notes - TeleVault Desktop v0.3.0
 
 **Ngày phát hành / Release Date:** 2026-10-14  
