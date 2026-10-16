@@ -23,6 +23,8 @@ import { VaultContentArea } from './vault/VaultContentArea';
 import { formatFolderSummary } from '../utils/folderSummary';
 import { formatWaitTime } from '../utils/format';
 import { DriveSelectionBar } from './DriveSelectionBar';
+import { UpdateBadge } from './updater/UpdateBadge';
+import { AppUpdateModal } from './updater/AppUpdateModal';
 import {
   IconDashboard,
   IconDownload,
@@ -81,6 +83,23 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
       }
     });
     return () => unsub?.();
+  }, []);
+
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  useEffect(() => {
+    const autoCheck = localStorage.getItem('televault_auto_check_update') !== 'false';
+    if (!autoCheck) return;
+    const skipped = localStorage.getItem('televault_skipped_update_version');
+    window.televault?.updater?.checkUpdate?.().then((res) => {
+      if (res?.ok && res.update?.hasUpdate) {
+        if (res.update.latestVersion !== skipped) {
+          setUpdateInfo(res.update);
+        }
+      }
+    }).catch(() => {});
   }, []);
 
   const handleRescanVault = async () => {
@@ -236,124 +255,10 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
       </div>
     );
   } else if (navigation.section === 'gdrive') {
-    const gdSync = navigation.syncStatus?.gdrive;
-    const isConnected = Boolean(gdSync?.isConnected);
-    const isPaused = Boolean(gdSync?.isPaused || gdSync?.status === 'paused');
-    const isScanning = Boolean(gdSync?.scanPhase);
-    const isSyncing = gdSync?.status === 'syncing' || Boolean(gdSync?.currentSyncFile);
-    const hasError = Boolean(gdSync?.lastError || gdSync?.status === 'error');
-
-    let statusBadge = null;
-    if (isConnected) {
-      if (isScanning) {
-        statusBadge = (
-          <div className="relative group/gdrive-status inline-flex items-center">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-2xs"
-              aria-label={t('gdriveStatusScanning')}
-            >
-              <svg className="animate-spin h-3.5 w-3.5 text-blue-500" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            </div>
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-            >
-              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-              <span className="relative z-10">{t('gdriveStatusScanning')}</span>
-            </div>
-          </div>
-        );
-      } else if (isSyncing) {
-        statusBadge = (
-          <div className="relative group/gdrive-status inline-flex items-center">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs"
-              aria-label={t('gdriveStatusSyncing')}
-            >
-              <svg className="h-3.5 w-3.5 animate-pulse text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-              </svg>
-            </div>
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-            >
-              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-              <span className="relative z-10">{t('gdriveStatusSyncing')}</span>
-            </div>
-          </div>
-        );
-      } else if (isPaused) {
-        statusBadge = (
-          <div className="relative group/gdrive-status inline-flex items-center">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-2xs"
-              aria-label={t('gdriveStatsPaused')}
-            >
-              <svg className="h-3 w-3 fill-amber-500" viewBox="0 0 24 24">
-                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-              </svg>
-            </div>
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-            >
-              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-              <span className="relative z-10">{t('gdriveStatsPaused')}</span>
-            </div>
-          </div>
-        );
-      } else if (hasError) {
-        statusBadge = (
-          <div className="relative group/gdrive-status inline-flex items-center">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25 shadow-2xs"
-              aria-label={gdSync?.lastError || t('syncStatusError')}
-            >
-              <svg className="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </div>
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-            >
-              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-              <span className="relative z-10">{gdSync?.lastError || t('syncStatusError')}</span>
-            </div>
-          </div>
-        );
-      } else {
-        statusBadge = (
-          <div className="relative group/gdrive-status inline-flex items-center">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs"
-              aria-label={t('gdriveStatusReady')}
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            </div>
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 hidden group-hover/gdrive-status:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-            >
-              <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-              <span className="relative z-10">{t('gdriveStatusReady')}</span>
-            </div>
-          </div>
-        );
-      }
-    }
-
     topBarLeftContent = (
       <div className="flex items-center gap-2.5 min-w-0">
         <IconGDriveLogo className="h-5 w-5 shrink-0" />
         <h1 className="text-sm font-semibold text-[var(--gd-text)] truncate">{t('gdriveSection')}</h1>
-        {statusBadge}
       </div>
     );
   } else if (navigation.section === 'dashboard') {
@@ -630,6 +535,15 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
             rightContent={topBarRightContent}
             selectionBar={topBarSelectionBar}
             floodWaitSec={floodWaitSec}
+            updateBadge={
+              updateInfo?.hasUpdate && !updateDismissed ? (
+                <UpdateBadge
+                  updateInfo={updateInfo}
+                  onOpenModal={() => setShowUpdateModal(true)}
+                  onDismiss={() => setUpdateDismissed(true)}
+                />
+              ) : null
+            }
           />
 
           {floodWaitSec > 0 && (
@@ -665,6 +579,10 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
                 folderSummary={folderSummary}
                 activeAccount={activeAccount}
                 onSignOut={onSignOut}
+                onOpenUpdateModal={(info) => {
+                  setUpdateInfo(info);
+                  setShowUpdateModal(true);
+                }}
                 t={t}
                 showToast={showToast}
               />
@@ -819,6 +737,16 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
           onClose={() => actions.setShowHelpDialog(false)}
         />
       )}
+
+      <AppUpdateModal
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        updateInfo={updateInfo}
+        onSkipVersion={(ver) => {
+          localStorage.setItem('televault_skipped_update_version', ver);
+          setUpdateInfo(null);
+        }}
+      />
     </div>
   );
 }

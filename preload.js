@@ -241,4 +241,14 @@ contextBridge.exposeInMainWorld('televault', {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),
     pickDirectory: () => ipcRenderer.invoke('shell:pickDirectory'),
   },
+  updater: {
+    checkUpdate: (opts) => ipcRenderer.invoke('update:check', opts),
+    downloadUpdate: (downloadInfo) => ipcRenderer.invoke('update:download', downloadInfo),
+    installUpdate: (filePath) => ipcRenderer.invoke('update:install', { filePath }),
+    onDownloadProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('update:download-progress', listener);
+      return () => ipcRenderer.removeListener('update:download-progress', listener);
+    },
+  },
 });

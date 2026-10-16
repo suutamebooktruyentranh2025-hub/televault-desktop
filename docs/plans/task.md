@@ -1,13 +1,9 @@
-# Task Tracker: Tiến Độ Xoá & Dọn Dẹp Thùng Rác
-
 | # | Task | Status |
 |---|------|--------|
-| 1 | Khai báo i18n Song Ngữ Đối Xứng Trong `src/i18n/locales.js` | `[x]` |
-| 2 | Backend: Broadcast tiến độ Trash, gộp Folder Message IDs & Thêm API `vault:emptyTrash` | `[x]` |
-| 3 | Frontend Hook: Tích hợp Tiến độ & Thao tác Dọn Thùng Rác vào `useVaultActions.js` | `[x]` |
-| 4 | UI: Hiển thị Tiến trình chi tiết & Progress bar trên `DriveSelectionBar.jsx` | `[x]` |
-| 5 | UI: Thêm nút "Dọn sạch thùng rác" (Empty Trash) với Floating Tooltip trong `VaultContentArea.jsx` | `[x]` |
-| 6 | Kiểm thử & Xác minh Toàn diện (`npm test`, `npm run build`) | `[x]` |
-| 7 | Backend & IPC: Flat Trash Listing trong `browseHandlers.js` & `originalPath` trong `vaultShared.js` | `[x]` |
-| 8 | UI: Hiển thị Vị trí ban đầu (`originalLocation`) cho tệp trong Thùng rác (`BrowserScreen.jsx`) | `[x]` |
-| 9 | Kiểm thử tự động Flat Trash (`flatTrashListing.test.js`) & Vite Build | `[x]` |
+| 1 | Utility bóc tách Changelog & So sánh Semver (`updateUtils.js` + unit tests) | `[x]` |
+| 2 | Backend: GitHub Releases Client, Download with Progress, Install Process (`githubUpdater.js` + unit tests) | `[x]` |
+| 3 | IPC & Preload: Đăng ký `update:*` handlers và `window.televault.updater` bridge | `[x]` |
+| 4 | i18n Song Ngữ Đối Xứng Trong `src/i18n/locales.js` | `[x]` |
+| 5 | UI Components: `UpdateBadge.jsx`, `AppUpdateModal.jsx`, `UpdateChecker.jsx` | `[x]` |
+| 6 | Tích hợp vào `VaultShell.jsx` và Settings Screen | `[x]` |
+| 7 | Kiểm thử Toàn diện & Xác thực (`npm run build`, unit tests, i18n check) | `[x]` |

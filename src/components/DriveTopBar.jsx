@@ -14,6 +14,7 @@ export function DriveTopBar({
   rightContent,
   selectionBar,
   floodWaitSec = 0,
+  updateBadge = null,
 }) {
   const { t } = useI18n();
 
@@ -23,6 +24,7 @@ export function DriveTopBar({
         <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
           <div className="min-w-0 flex-1">{selectionBar}</div>
           <div className="shrink-0 flex items-center gap-2">
+            {updateBadge}
             <TelegramRateLimitBadge floodWaitSec={floodWaitSec} />
           </div>
         </div>
@@ -62,6 +64,7 @@ export function DriveTopBar({
 
           {/* Right Slot: Action buttons (Trùng lặp, List/Grid, Help) */}
           <div className="flex shrink-0 items-center gap-2">
+            {updateBadge}
             <TelegramRateLimitBadge floodWaitSec={floodWaitSec} />
             {rightContent}
 

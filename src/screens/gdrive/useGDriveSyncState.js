@@ -67,6 +67,13 @@ export function useGDriveSyncState() {
   const [activeSyncTab, setActiveSyncTab] = useState('cache');
   const [gdriveConnecting, setGdriveConnecting] = useState(false);
   const [gdriveAuthUrl, setGdriveAuthUrl] = useState(null);
+  const [syncStarting, setSyncStarting] = useState(false);
+
+  const isSyncing = syncStarting || (!gdriveIsPaused && (
+    gdriveStatus === 'syncing' ||
+    (Array.isArray(gdriveActiveTasks) && gdriveActiveTasks.length > 0) ||
+    Boolean(gdriveCurrentSyncFile)
+  ));
 
   const [selectedQueueIds, setSelectedQueueIds] = useState(new Set());
   const [selectedErrorIds, setSelectedErrorIds] = useState(new Set());
@@ -395,7 +402,7 @@ export function useGDriveSyncState() {
   }
 
   async function handleScanNow() {
-    if (scanBusy || Boolean(gdriveScanPhase)) return;
+    if (scanBusy || Boolean(gdriveScanPhase) || isSyncing) return;
     setScanBusy(true);
     scanActiveRef.current = true;
     setLiveScannedItems([]);
@@ -430,6 +437,7 @@ export function useGDriveSyncState() {
   }
 
   async function handleStartSync() {
+    setSyncStarting(true);
     try {
       const conn = await window.televault?.gdrive?.checkConnection?.();
       if (conn && !conn.ok) {
@@ -447,6 +455,8 @@ export function useGDriveSyncState() {
     } catch (err) {
       showToast(String(err?.message || err) || t('gdriveStartSyncError'), { variant: 'error' });
       await load();
+    } finally {
+      setSyncStarting(false);
     }
   }
 
@@ -769,5 +779,7 @@ export function useGDriveSyncState() {
     handleSelectionClick,
     cacheExplorer: null,
     folderExplorer,
+    isSyncing,
+    syncStarting,
   };
 }

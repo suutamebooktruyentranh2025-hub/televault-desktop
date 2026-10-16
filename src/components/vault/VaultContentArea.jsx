@@ -23,6 +23,7 @@ export function VaultContentArea({
   folderSummary,
   activeAccount,
   onSignOut,
+  onOpenUpdateModal,
   t,
   showToast,
 }) {
@@ -640,7 +641,7 @@ export function VaultContentArea({
               : 'invisible absolute inset-0 pointer-events-none -z-10'
           }
         >
-          <SettingsScreen account={activeAccount} onSignOut={onSignOut} />
+          <SettingsScreen account={activeAccount} onSignOut={onSignOut} onOpenUpdateModal={onOpenUpdateModal} />
         </div>
       )}
 

@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
 import { useToast } from '../context/ToastContext';
 import { AdminContactLinks } from '../components/AdminContactLinks';
+import { UpdateChecker } from '../components/updater/UpdateChecker';
 
 const settingsApi = window.televault?.settings;
 const sessionApi = window.televault?.session;
@@ -55,11 +56,15 @@ function SettingsField({ title, hint, children }) {
   );
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({ account, onSignOut, onOpenUpdateModal }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const { confirm } = useDialog();
   const { showToast } = useToast();
+  const [appVersion, setAppVersion] = useState('0.3.1');
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState(() => {
+    return localStorage.getItem('televault_auto_check_update') !== 'false';
+  });
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [cacheGb, setCacheGb] = useState(2);
   const [autoResume, setAutoResume] = useState(true);
@@ -75,6 +80,9 @@ export function SettingsScreen() {
   const [initialSyncStats, setInitialSyncStats] = useState({ localCount: 0, remoteCount: 0 });
 
   const load = useCallback(async () => {
+    const ver = await window.televault?.gdrive?.getAppVersion?.();
+    if (ver) setAppVersion(ver);
+
     const result = await settingsApi?.get();
     if (result?.ok) {
       setMaxConcurrent(result.maxConcurrentTransfers || 2);
@@ -385,6 +393,19 @@ export function SettingsScreen() {
             />
           </SettingsField>
         </div>
+      </section>
+
+      <section className="gd-settings-group">
+        <h2 className="gd-settings-group-title">{t('updateModalTitle')}</h2>
+        <UpdateChecker
+          currentVersion={appVersion}
+          onOpenUpdateModal={onOpenUpdateModal}
+          autoCheckEnabled={autoCheckUpdate}
+          onToggleAutoCheck={(val) => {
+            setAutoCheckUpdate(val);
+            localStorage.setItem('televault_auto_check_update', val ? 'true' : 'false');
+          }}
+        />
       </section>
 
       <section className="gd-settings-group">

@@ -166,8 +166,6 @@ export function GDriveFolderDetail({
   selectedFolderId,
   selectedFolderPath,
   navigateToBreadcrumb,
-  hideIgnored,
-  handleToggleHideIgnored,
 }) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const startRow = total > 0 ? (page - 1) * limit + 1 : 0;
@@ -177,7 +175,7 @@ export function GDriveFolderDetail({
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-[var(--gd-surface)]">
       {/* Unified Toolbar */}
       <div className="shrink-0 px-3.5 py-2 border-b border-[var(--gd-border)] bg-[var(--gd-surface)] flex items-center justify-between gap-2.5 min-h-[44px]">
-        {/* Left: Back (if not root) + Status Filter + Hide Ignored */}
+        {/* Left: Back (if not root) + Status Filter */}
         <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
           {selectedFolderId !== 'root' && selectedFolderPath?.length > 1 && (
             <button
@@ -202,20 +200,6 @@ export function GDriveFolderDetail({
             <option value="pending">{t('gdriveCacheStatusPending')}</option>
             <option value="synced">{t('gdriveCacheStatusSynced')}</option>
           </select>
-
-          {/* Hide Ignored Checkbox */}
-          <label
-            className="flex items-center gap-1.5 text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] cursor-pointer select-none px-2 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] shadow-2xs hover:bg-[var(--gd-surface-hover)] transition-colors shrink-0"
-            title={t('gdriveCacheHideIgnoredTooltip')}
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(hideIgnored)}
-              onChange={(e) => handleToggleHideIgnored?.(e.target.checked)}
-              className="rounded border-[var(--gd-border)] text-[var(--gd-primary)] focus:ring-0 cursor-pointer h-3.5 w-3.5"
-            />
-            <span className="font-medium text-[11px]">{t('gdriveCacheHideIgnored')}</span>
-          </label>
         </div>
 
 

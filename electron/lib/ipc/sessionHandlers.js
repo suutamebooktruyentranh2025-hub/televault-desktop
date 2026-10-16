@@ -13,6 +13,7 @@ const { SyncService } = require('../sync/syncService');
 const { registerSyncHandlers } = require('./syncHandlers');
 const { GDriveSyncService } = require('../gdrive/gdriveSyncService');
 const { registerGDriveHandlers } = require('./gdriveHandlers');
+const { registerUpdateHandlers } = require('./updateHandlers');
 
 /** @typedef {'booting'|'supabaseAuth'|'telegramApiSetup'|'telegramBooting'|'auth'|'syncing'|'ready'} SessionPhase */
 
@@ -208,6 +209,7 @@ function registerSessionHandlers(ctx) {
     getAccountDir: (id) => path.join(ctx.userDataPath, 'accounts', id),
     getAppVersion: () => require('electron').app.getVersion(),
   });
+  registerUpdateHandlers(ipcMain);
 
   function telegramSnapshot() {
     return telegram.getSnapshot();

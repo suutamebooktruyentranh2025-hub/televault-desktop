@@ -143,8 +143,6 @@ export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, onCan
             selectedFolderId={folderExplorer.selectedFolderId}
             selectedFolderPath={folderExplorer.selectedFolderPath}
             navigateToBreadcrumb={folderExplorer.navigateToBreadcrumb}
-            hideIgnored={folderExplorer.hideIgnored}
-            handleToggleHideIgnored={folderExplorer.handleToggleHideIgnored}
           />
         </div>
       </div>
