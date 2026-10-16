@@ -1,3 +1,29 @@
+# Release Notes - TeleVault Desktop v0.3.2
+
+**Ngày phát hành / Release Date:** 2026-10-16  
+**Phiên bản / Version:** `v0.3.2` (So sánh với `v0.3.1`)  
+**Mục tiêu chính / Milestone:** Tích hợp cơ chế Tự động Cập nhật ứng dụng (GitHub Releases Auto-Update), Thử lại hàng loạt trong Hàng đợi đồng bộ Google Drive, Tối ưu hóa toàn diện giao diện & điều khiển Đồng bộ Drive, Cải tiến bố cục dọn dẹp Thùng rác.
+
+---
+
+## 🌟 Điểm nổi bật v0.3.2 (Release Highlights)
+
+- 🚀 **Tự động Cập nhật ứng dụng (GitHub Releases Auto-Update)**: Tích hợp hệ thống kiểm tra và cập nhật phiên bản mới trực tiếp từ GitHub Releases, hiển thị badge thông báo trực quan và modal xem changelog/tải về.
+- 🔁 **Thử lại hàng loạt trong Hàng đợi Drive (Batch Retry Sync Queue)**: Cho phép chọn và thử lại đồng loạt các tệp gặp lỗi trong hàng đợi Google Drive, giúp việc đồng bộ dữ liệu gián đoạn diễn ra thuận tiện và nhanh chóng.
+- 🎯 **Ghim thanh điều khiển & Khóa hàng trên cùng Google Drive**: Ghim cố định các nút hành động (`Đồng bộ`, `Tạm dừng`, `Quét Drive`) trên Header Action Bar không bị rớt dòng khi gặp lỗi; tách thông báo lỗi thành Error Banner riêng biệt bên dưới kèm nút Reconnect nhanh.
+- ⚡ **Tối ưu hóa phản hồi & Trạng thái Đồng bộ Drive**:
+  - Thêm hiệu ứng loading spinner quay tròn trên nút Đồng bộ khi đang gửi tệp.
+  - Tự động vô hiệu hóa Quét Drive khi đang đồng bộ để tránh nghẽn luồng và xung đột tác vụ.
+  - Tự động ẩn nút Tạm dừng khi đang quét để làm rõ ranh giới chức năng giữa quét dữ liệu Drive và hàng đợi tải lên Telegram.
+- 🧹 **Tinh gọn giao diện & Loại bỏ trùng lặp**:
+  - Cân đối các thẻ thống kê bộ đệm (`GDriveCacheSummaryBar`), loại bỏ thanh tiến độ thừa trên thẻ "Đã lên Telegram".
+  - Loại bỏ checkbox trùng lặp "Ẩn tệp bỏ qua" ở bảng bên phải, tập trung điều khiển tại cây thư mục bên trái.
+  - Loại bỏ badge trạng thái dư thừa cạnh tiêu đề Google Drive ở thanh điều hướng trên.
+- 🗑️ **Cải tiến giao diện Dọn dẹp Thùng rác (Trash Cleanup Layout)**: Bổ sung thanh tiến độ xoá thời gian thực và bố cục nút thao tác dọn dẹp an toàn.
+- 🌐 **Chuẩn hóa Quốc tế hóa (i18n)**: Toàn bộ chuỗi giao diện, thông báo lỗi và badge mới được đồng bộ song ngữ đối xứng 100% giữa Tiếng Việt và Tiếng Anh.
+
+---
+
 # Release Notes - TeleVault Desktop v0.3.1
 
 **Ngày phát hành / Release Date:** 2026-10-15  
