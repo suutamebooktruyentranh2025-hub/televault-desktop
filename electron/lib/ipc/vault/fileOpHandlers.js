@@ -1,5 +1,6 @@
+const { planFolderDelete } = require('@televault/core');
 const { FolderMoveException } = require('../../vault/vaultService');
-const { broadcastVaultChanged, broadcastDeleteProgress, broadcastMoveProgress } = require('./vaultShared');
+const { broadcastVaultChanged, broadcastTrashProgress, broadcastDeleteProgress, broadcastMoveProgress } = require('./vaultShared');
 
 function registerFileOpHandlers(ipcMain, ctx, requireVault) {
   let activeMoveController = null;
@@ -114,7 +115,11 @@ function registerFileOpHandlers(ipcMain, ctx, requireVault) {
   ipcMain.handle('vault:trash', async (_evt, { messageIds = [], folders = [] }) => {
     try {
       const vault = requireVault();
-      if (messageIds.length) await vault.trashEntries(messageIds);
+      if (messageIds.length) {
+        await vault.trashEntries(messageIds, (progress) => {
+          broadcastTrashProgress(progress);
+        });
+      }
       for (const f of folders) await vault.trashFolder(f);
       broadcastVaultChanged();
       return { ok: true };
@@ -139,12 +144,37 @@ function registerFileOpHandlers(ipcMain, ctx, requireVault) {
     try {
       const vault = requireVault();
       let deleteResult = { ok: true, deletedCount: 0, failedCount: 0, deletedIds: [], failedIds: [], error: null };
-      if (messageIds.length) {
-        deleteResult = await vault.deleteEntries(messageIds, (progress) => {
+      
+      const allIds = new Set(messageIds);
+      if (folders.length) {
+        const allEntries = vault.db.getAll();
+        for (const f of folders) {
+          const folderSteps = planFolderDelete(allEntries, f);
+          for (const s of folderSteps) {
+            allIds.add(s.messageId);
+          }
+        }
+      }
+
+      const idList = Array.from(allIds);
+      if (idList.length) {
+        deleteResult = await vault.deleteEntries(idList, (progress) => {
           broadcastDeleteProgress(progress);
         });
       }
-      for (const f of folders) await vault.deleteFolderPermanently(f);
+      broadcastVaultChanged();
+      return deleteResult;
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle('vault:emptyTrash', async () => {
+    try {
+      const vault = requireVault();
+      const deleteResult = await vault.emptyTrash((progress) => {
+        broadcastDeleteProgress(progress);
+      });
       broadcastVaultChanged();
       return deleteResult;
     } catch (e) {

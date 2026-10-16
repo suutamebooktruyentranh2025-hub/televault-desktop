@@ -535,18 +535,52 @@ export function useGDriveSyncState() {
   }
 
   async function handleRetryFile(driveFileId) {
-    const res = await window.televault?.gdrive?.retryFile(driveFileId);
+    const res = window.televault?.gdrive?.retryErrors
+      ? await window.televault.gdrive.retryErrors([driveFileId])
+      : await window.televault?.gdrive?.retryFile(driveFileId);
     if (!res?.ok) {
       showToast(t('gdriveToastRetryError', { error: res?.error || 'Unknown error' }), { variant: 'error' });
+    } else {
+      showToast(t('gdriveToastRetrySingleEnqueued'), { variant: 'success' });
     }
+    return res;
   }
 
+  async function handleRetryErrors(driveFileIds) {
+    const ids = Array.isArray(driveFileIds) ? driveFileIds : [driveFileIds].filter(Boolean);
+    if (ids.length === 0) return { ok: true, enqueuedCount: 0 };
+    const res = window.televault?.gdrive?.retryErrors
+      ? await window.televault.gdrive.retryErrors(ids)
+      : await window.televault?.gdrive?.retryAllErrors?.();
+    if (!res?.ok) {
+      showToast(t('gdriveToastRetryError', { error: res?.error || 'Unknown error' }), { variant: 'error' });
+    } else {
+      const count = res.enqueuedCount !== undefined ? res.enqueuedCount : ids.length;
+      showToast(t('gdriveToastRetryEnqueuedCount', { count }), { variant: 'success' });
+    }
+    return res;
+  }
 
   async function handleRetryAll() {
-    await retryGDriveErrorsSequentially(
-      gdriveErrors,
-      (drive_file_id) => window.televault?.gdrive?.retryFile(drive_file_id),
-    );
+    let res;
+    if (typeof window.televault?.gdrive?.retryAllErrors === 'function') {
+      res = await window.televault.gdrive.retryAllErrors();
+    } else if (typeof window.televault?.gdrive?.retryErrors === 'function') {
+      res = await window.televault.gdrive.retryErrors(gdriveErrors.map(e => e.driveFileId));
+    } else {
+      await retryGDriveErrorsSequentially(
+        gdriveErrors,
+        (drive_file_id) => window.televault?.gdrive?.retryFile(drive_file_id),
+      );
+      res = { ok: true, enqueuedCount: gdriveErrors.length };
+    }
+    if (!res?.ok) {
+      showToast(t('gdriveToastRetryError', { error: res?.error || 'Unknown error' }), { variant: 'error' });
+    } else {
+      const count = res.enqueuedCount !== undefined ? res.enqueuedCount : gdriveErrors.length;
+      showToast(t('gdriveToastRetryEnqueuedCount', { count }), { variant: 'success' });
+    }
+    return res;
   }
 
   const makeSelectionHandler = (setSelectedIds, lastRef) => {
@@ -726,6 +760,7 @@ export function useGDriveSyncState() {
     handleSaveFilters,
     handleAddGDriveSubs,
     handleRetryFile,
+    handleRetryErrors,
     handleRetryAll,
     handleSkipItem,
     applyQueueSelection,

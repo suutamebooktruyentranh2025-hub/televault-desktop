@@ -333,22 +333,43 @@ class VaultService {
     await this.createFolder(K_TRASH_FOLDER);
   }
 
-  async trashEntries(messageIds) {
+  async trashEntries(messageIds, onProgress) {
     if (messageIds.length === 0) return;
     await this.ensureTrashFolder();
     const all = this.db.getAll();
     const paths = all.map((e) => e.path);
+    const total = messageIds.length;
+    let done = 0;
+    onProgress?.({ done: 0, total, percent: 0 });
     for (const id of messageIds) {
       const entry = all.find((e) => e.messageId === id);
-      if (!entry || isInTrash(entry.path)) continue;
+      if (!entry || isInTrash(entry.path)) {
+        done += 1;
+        onProgress?.({ done, total, percent: total > 0 ? Math.round((done / total) * 100) : 100 });
+        continue;
+      }
       if (id < 0) {
         this._pendingTrashTempIds.add(id);
+        done += 1;
+        onProgress?.({ done, total, percent: total > 0 ? Math.round((done / total) * 100) : 100 });
         continue;
       }
       const dest = uniqueVaultPath(pathInTrash(entry.path), paths);
       paths.push(dest);
       await this.renameFile(id, dest);
+      done += 1;
+      onProgress?.({ done, total, percent: total > 0 ? Math.round((done / total) * 100) : 100 });
     }
+  }
+
+  async emptyTrash(onProgress) {
+    const all = this.db.getAll();
+    const trashEntries = all.filter((e) => isInTrash(e.path));
+    if (trashEntries.length === 0) {
+      return { ok: true, deletedCount: 0, failedCount: 0, deletedIds: [], failedIds: [], error: null };
+    }
+    const messageIds = trashEntries.map((e) => e.messageId);
+    return await this.deleteEntries(messageIds, onProgress);
   }
 
   async trashFolder(folder) {

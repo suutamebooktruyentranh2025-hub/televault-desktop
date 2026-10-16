@@ -5,6 +5,7 @@ const {
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
   broadcastMoveProgress,
+  broadcastTrashProgress,
   broadcastDeleteProgress,
 } = require('./vaultShared');
 const { registerBrowseHandlers } = require('./browseHandlers');
@@ -42,6 +43,7 @@ module.exports = {
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
   broadcastMoveProgress,
+  broadcastTrashProgress,
   broadcastDeleteProgress,
 };
 

@@ -796,3 +796,67 @@ test('removeQueueBatch deletes multiple items in one batch', () => {
   assert.equal(changed, true);
 });
 
+test('retryErrors moves errors to sync queue and starts worker', () => {
+  const sync_service = Object.create(GDriveSyncService.prototype);
+  let queueBatch = null;
+  let startedWorker = false;
+  let changed = false;
+
+  sync_service.auth = { isConnected: () => true };
+  sync_service.isPaused = false;
+  sync_service.scanPhase = false;
+  sync_service._startQueueWorker = () => { startedWorker = true; };
+  sync_service.onChange = () => { changed = true; };
+
+  sync_service.db = {
+    gdriveSyncErrorsAll: () => [
+      { driveFileId: 'err-1', fileName: 'file1.txt', drivePath: '/file1.txt', vaultPath: '/v/file1.txt', size: 100, modifiedTime: '2026-01-01' },
+      { driveFileId: 'err-2', fileName: 'file2.txt', drivePath: '/file2.txt', vaultPath: '/v/file2.txt', size: 200, modifiedTime: '2026-01-02' },
+      { driveFileId: 'err-3', fileName: 'file3.txt', drivePath: '/file3.txt', vaultPath: '/v/file3.txt', size: 300, modifiedTime: '2026-01-03' },
+    ],
+    gdriveCacheNodesGet: (id) => (id === 'err-1' ? { md5Checksum: 'checksum-1' } : null),
+    gdriveSyncQueueAddBatch: (batch) => {
+      queueBatch = batch;
+      return batch.length;
+    },
+    gdriveSyncQueueCount: () => 2,
+  };
+
+  const res = sync_service.retryErrors(['err-1', 'err-2']);
+  assert.equal(res.ok, true);
+  assert.equal(res.enqueuedCount, 2);
+  assert.equal(queueBatch.length, 2);
+  assert.equal(queueBatch[0].driveFileId, 'err-1');
+  assert.equal(queueBatch[0].md5Checksum, 'checksum-1');
+  assert.equal(queueBatch[1].driveFileId, 'err-2');
+  assert.equal(queueBatch[1].md5Checksum, null);
+  assert.equal(sync_service.pendingCount, 2);
+  assert.equal(sync_service.status, 'syncing');
+  assert.equal(startedWorker, true);
+  assert.equal(changed, true);
+});
+
+test('retryAllErrors moves all errors to sync queue', () => {
+  const sync_service = Object.create(GDriveSyncService.prototype);
+  let queueBatch = null;
+
+  sync_service.auth = { isConnected: () => false };
+  sync_service.db = {
+    gdriveSyncErrorsAll: () => [
+      { driveFileId: 'err-1', fileName: 'file1.txt', drivePath: '/file1.txt', vaultPath: '/v/file1.txt', size: 100 },
+      { driveFileId: 'err-2', fileName: 'file2.txt', drivePath: '/file2.txt', vaultPath: '/v/file2.txt', size: 200 },
+    ],
+    gdriveCacheNodesGet: () => null,
+    gdriveSyncQueueAddBatch: (batch) => {
+      queueBatch = batch;
+      return batch.length;
+    },
+    gdriveSyncQueueCount: () => 2,
+  };
+
+  const res = sync_service.retryAllErrors();
+  assert.equal(res.ok, true);
+  assert.equal(res.enqueuedCount, 2);
+  assert.equal(queueBatch.length, 2);
+});
+

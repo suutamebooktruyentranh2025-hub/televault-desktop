@@ -24,6 +24,22 @@ export function useVaultActions({
   const [moveCancelling, setMoveCancelling] = useState(false);
   const [delete_forever_busy, set_delete_forever_busy] = useState(false);
   const [delete_forever_target_keys, set_delete_forever_target_keys] = useState([]);
+  const [deleteProgress, setDeleteProgress] = useState(null);
+  const [trashBusy, setTrashBusy] = useState(false);
+  const [trashProgress, setTrashProgress] = useState(null);
+
+  useEffect(() => {
+    const unsubDelete = vaultApi?.onDeleteProgress?.((payload) => {
+      setDeleteProgress(payload);
+    });
+    const unsubTrash = vaultApi?.onTrashProgress?.((payload) => {
+      setTrashProgress(payload);
+    });
+    return () => {
+      unsubDelete?.();
+      unsubTrash?.();
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = vaultApi?.onMoveProgress?.((payload) => {
@@ -82,15 +98,44 @@ export function useVaultActions({
     if (!name?.trim()) return;
     const result = await vaultApi?.createFolder(vault.currentFolder, name.trim());
     if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    else await vault?.refresh?.();
   }
 
   async function handleTrashSelected() {
-    const result = await vaultApi?.trash([...selectedIds], [...selectedFolders]);
-    if (!result?.ok) {
-      showToast(result?.error || t('errorGeneric'), { variant: 'error' });
-      return;
+    if (trashBusy) return;
+    const ids = [...selectedIds];
+    const folders = [...selectedFolders];
+    setTrashBusy(true);
+    setTrashProgress({ done: 0, total: ids.length, percent: 0 });
+    let trashFailed = false;
+    let trashError = null;
+    try {
+      const result = await vaultApi?.trash(ids, folders);
+      if (!result?.ok) {
+        trashFailed = true;
+        trashError = result?.error;
+      } else {
+        clearSelection();
+        await vault?.refresh?.();
+        return;
+      }
+    } catch (err) {
+      trashFailed = true;
+      trashError = String(err?.message || err);
+    } finally {
+      setTrashBusy(false);
+      setTrashProgress(null);
     }
-    clearSelection();
+
+    if (trashFailed) {
+      const confirmed = await confirm(t('trashFailedConfirmDeletePermanent'));
+      if (confirmed) {
+        const ok = await run_delete_forever(ids, folders);
+        if (ok) clearSelection();
+      } else if (trashError) {
+        showToast(trashError, { variant: 'error' });
+      }
+    }
   }
 
   async function handleMoveSelected() {
@@ -173,6 +218,7 @@ export function useVaultActions({
       return;
     }
     clearSelection();
+    await vault?.refresh?.();
   }
 
   async function run_delete_forever(message_ids, folder_paths) {
@@ -183,6 +229,7 @@ export function useVaultActions({
     ];
     set_delete_forever_busy(true);
     set_delete_forever_target_keys(target_keys);
+    setDeleteProgress({ done: 0, total: message_ids.length, percent: 0 });
     try {
       const result = await vaultApi?.deletePermanent(message_ids, folder_paths);
       if (!result?.ok && (!result?.deletedCount || result.deletedCount === 0)) {
@@ -195,6 +242,7 @@ export function useVaultActions({
           { variant: 'warning' },
         );
       }
+      await vault?.refresh?.();
       return true;
     } catch (error_object) {
       showToast(String(error_object?.message || error_object || t('errorGeneric')), { variant: 'error' });
@@ -202,6 +250,30 @@ export function useVaultActions({
     } finally {
       set_delete_forever_busy(false);
       set_delete_forever_target_keys([]);
+      setDeleteProgress(null);
+    }
+  }
+
+  async function handleEmptyTrash() {
+    if (delete_forever_busy) return;
+    if (!(await confirm(t('confirmEmptyTrashDesc')))) return;
+    set_delete_forever_busy(true);
+    setDeleteProgress({ done: 0, total: 0, percent: 0 });
+    try {
+      const result = await vaultApi?.emptyTrash?.();
+      if (!result?.ok && result?.error) {
+        showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+        return;
+      }
+      clearSelection();
+      showToast(t('emptyTrashSuccess'), { variant: 'success' });
+      await vault?.refresh?.();
+    } catch (e) {
+      showToast(String(e?.message || e || t('errorGeneric')), { variant: 'error' });
+    } finally {
+      set_delete_forever_busy(false);
+      set_delete_forever_target_keys([]);
+      setDeleteProgress(null);
     }
   }
 
@@ -220,6 +292,7 @@ export function useVaultActions({
     if (!name?.trim()) return;
     const result = await vaultApi?.renameFile(file.messageId, name.trim());
     if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    else await vault?.refresh?.();
   }
 
   async function handleRenameFolder(folderName, explicitPath = null) {
@@ -228,6 +301,7 @@ export function useVaultActions({
     if (!name?.trim()) return;
     const result = await vaultApi?.renameFolder(folderPath, name.trim());
     if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    else await vault?.refresh?.();
   }
 
   async function handleMoveFile(file) {
@@ -320,25 +394,71 @@ export function useVaultActions({
   }
 
   async function handleTrashFile(file) {
-    const result = await vaultApi?.trash([file.messageId], []);
-    if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    let trashFailed = false;
+    let trashError = null;
+    try {
+      const result = await vaultApi?.trash([file.messageId], []);
+      if (!result?.ok) {
+        trashFailed = true;
+        trashError = result?.error;
+      } else {
+        await vault?.refresh?.();
+        return;
+      }
+    } catch (err) {
+      trashFailed = true;
+      trashError = String(err?.message || err);
+    }
+
+    if (trashFailed) {
+      const confirmed = await confirm(t('trashFailedConfirmDeletePermanent'));
+      if (confirmed) {
+        await run_delete_forever([file.messageId], []);
+      } else if (trashError) {
+        showToast(trashError, { variant: 'error' });
+      }
+    }
   }
 
   async function handleTrashFolder(name, explicitPath = null) {
     const folderPath = explicitPath || `${vault.currentFolder}${name}/`;
-    const result = await vaultApi?.trash([], [folderPath]);
-    if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    let trashFailed = false;
+    let trashError = null;
+    try {
+      const result = await vaultApi?.trash([], [folderPath]);
+      if (!result?.ok) {
+        trashFailed = true;
+        trashError = result?.error;
+      } else {
+        await vault?.refresh?.();
+        return;
+      }
+    } catch (err) {
+      trashFailed = true;
+      trashError = String(err?.message || err);
+    }
+
+    if (trashFailed) {
+      const confirmed = await confirm(t('trashFailedConfirmDeletePermanent'));
+      if (confirmed) {
+        await run_delete_forever([], [folderPath]);
+      } else if (trashError) {
+        showToast(trashError, { variant: 'error' });
+      }
+    }
   }
 
   async function handleRestoreFile(file) {
     const result = await vaultApi?.restore([file.messageId], []);
     if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    else await vault?.refresh?.();
   }
 
   async function handleRestoreFolder(name, explicitPath = null) {
     const folderPath = explicitPath || `${vault.currentFolder}${name}/`;
     const result = await vaultApi?.restore([], [folderPath]);
     if (!result?.ok) showToast(result?.error || t('errorGeneric'), { variant: 'error' });
+    else await vault?.refresh?.();
   }
 
   async function handleDeleteForeverFile(file) {
@@ -367,6 +487,10 @@ export function useVaultActions({
     handleCancelMove,
     delete_forever_busy,
     delete_forever_target_keys,
+    deleteProgress,
+    trashBusy,
+    trashProgress,
+    handleEmptyTrash,
     uploadPaths,
     handleUploadFiles,
     handleUploadFolder,

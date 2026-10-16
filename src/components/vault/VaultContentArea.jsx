@@ -8,6 +8,7 @@ import { DashboardScreen } from '../../screens/DashboardScreen';
 import { DuplicatesScreen } from '../../screens/DuplicatesScreen';
 import { DriveBreadcrumb } from '../DriveBreadcrumb';
 import { CreateTagDialog } from '../CreateTagDialog';
+import { IconDeleteForever } from '../DriveIcons';
 import { useDialog } from '../../context/DialogContext';
 import { DEFAULT_TRASH_FOLDER, isTrashPath } from '../../constants/vaultConstants';
 
@@ -405,6 +406,34 @@ export function VaultContentArea({
               </span>
             )}
           </div>
+          {isTrash && ((vault.files?.length || 0) + (vault.folders?.length || 0) > 0) && (
+            <div className="relative group shrink-0 ml-2">
+              <button
+                type="button"
+                onClick={() => void actions.handleEmptyTrash?.()}
+                disabled={actions.delete_forever_busy}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/60 border border-red-200 dark:border-red-900/50 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={t('emptyTrashButton')}
+              >
+                {actions.delete_forever_busy ? (
+                  <span
+                    className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    role="status"
+                  />
+                ) : (
+                  <IconDeleteForever className="h-4 w-4" />
+                )}
+                <span>{t('emptyTrashButton')}</span>
+              </button>
+              {/* Modern Floating Dark Bubble Tooltip */}
+              <div className="pointer-events-none absolute right-0 top-full mt-1.5 hidden group-hover:flex items-center z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="relative bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-xs text-white text-[11px] leading-tight font-normal px-2.5 py-1.5 rounded-md shadow-lg border border-white/10 whitespace-nowrap">
+                  {t('emptyTrashTooltip')}
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10 rotate-45" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         {isTagFiltered && (
           <div className="flex items-center justify-between px-4 pt-2.5 pb-2 text-xs text-[var(--gd-text-secondary)] border-b border-[var(--gd-border)] bg-[var(--gd-bg)]">

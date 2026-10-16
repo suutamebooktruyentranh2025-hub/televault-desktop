@@ -419,6 +419,69 @@ const queueWorkerMethods = {
     }
   },
 
+  retryErrors(driveFileIds = []) {
+    if (!this.db) return { ok: false, error: 'Database not available' };
+    const idsToRetry = Array.isArray(driveFileIds) ? driveFileIds : [driveFileIds].filter(Boolean);
+    if (idsToRetry.length === 0) return { ok: true, enqueuedCount: 0 };
+
+    const errors = this.db.gdriveSyncErrorsAll() || [];
+    const targetSet = new Set(idsToRetry);
+    const targets = errors.filter(err => targetSet.has(err.driveFileId));
+    if (targets.length === 0) return { ok: true, enqueuedCount: 0 };
+
+    const queueBatch = targets.map(err => {
+      let md5Checksum = null;
+      if (typeof this.db.gdriveCacheNodesGet === 'function') {
+        const node = this.db.gdriveCacheNodesGet(err.driveFileId);
+        if (node?.md5Checksum) md5Checksum = node.md5Checksum;
+      }
+      return {
+        driveFileId: err.driveFileId,
+        fileName: err.fileName,
+        drivePath: err.drivePath,
+        vaultPath: err.vaultPath,
+        size: Number(err.size) || 0,
+        modifiedTime: err.modifiedTime || null,
+        md5Checksum,
+        retryCount: 0,
+      };
+    });
+
+    let enqueuedCount = 0;
+    if (typeof this.db.gdriveSyncQueueAddBatch === 'function') {
+      enqueuedCount = this.db.gdriveSyncQueueAddBatch(queueBatch);
+    } else {
+      for (const item of queueBatch) {
+        if (typeof this.db.gdriveSyncErrorRemove === 'function') {
+          this.db.gdriveSyncErrorRemove(item.driveFileId);
+        }
+        if (typeof this.db.gdriveSyncQueueAdd === 'function') {
+          this.db.gdriveSyncQueueAdd(item);
+        }
+        enqueuedCount++;
+      }
+    }
+
+    if (typeof this.db.gdriveSyncQueueCount === 'function') {
+      this.pendingCount = this.db.gdriveSyncQueueCount();
+    }
+
+    if (!this.isPaused && !this.scanPhase && this.auth?.isConnected?.()) {
+      this.status = 'syncing';
+      this._startQueueWorker();
+    }
+    if (typeof this.onChange === 'function') this.onChange();
+
+    return { ok: true, enqueuedCount };
+  },
+
+  retryAllErrors() {
+    if (!this.db) return { ok: false, error: 'Database not available' };
+    const errors = this.db.gdriveSyncErrorsAll() || [];
+    const ids = errors.map(err => err.driveFileId);
+    return this.retryErrors(ids);
+  },
+
   startSync() {
     if (!this.auth?.isConnected?.()) {
       return { ok: false, error: 'Not connected to Google Drive' };

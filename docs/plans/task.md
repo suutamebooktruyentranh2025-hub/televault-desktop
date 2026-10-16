@@ -1,10 +1,13 @@
-# Task Tracker: Shared Vault Parity (Theo thư mục, Thẻ, và Khắc phục F5)
+# Task Tracker: Tiến Độ Xoá & Dọn Dẹp Thùng Rác
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Khắc phục lỗi F5: Cập nhật `sharedVaultManager.js` mở SQLite cục bộ ngay lập tức và `useSharedVaults.js` tự động reload | `[x]` |
-| 2 | Hỗ trợ `chatId` cho `vault:allTags`, `vault:getFoldersDetails`, `vault:getFlatStories`, `vault:getFlatFiles` trong `browseHandlers.js` | `[x]` |
-| 3 | Tích hợp `chatId` vào `useTagFilter.js` để lọc thẻ trên Shared Vault | `[x]` |
-| 4 | Bổ sung `browseScope` (Theo thư mục, Bộ truyện, Tệp lẻ) vào `useSharedVaults.js` | `[x]` |
-| 5 | Hiển thị `BrowseScopeDropdown` & `TagSelectDropdown` trên TopBar và lọc giao diện trong `VaultShell.jsx` & `VaultContentArea.jsx` | `[x]` |
-| 6 | Chạy verification (`npm test`, `npm run build`) | `[x]` |
+| 1 | Khai báo i18n Song Ngữ Đối Xứng Trong `src/i18n/locales.js` | `[x]` |
+| 2 | Backend: Broadcast tiến độ Trash, gộp Folder Message IDs & Thêm API `vault:emptyTrash` | `[x]` |
+| 3 | Frontend Hook: Tích hợp Tiến độ & Thao tác Dọn Thùng Rác vào `useVaultActions.js` | `[x]` |
+| 4 | UI: Hiển thị Tiến trình chi tiết & Progress bar trên `DriveSelectionBar.jsx` | `[x]` |
+| 5 | UI: Thêm nút "Dọn sạch thùng rác" (Empty Trash) với Floating Tooltip trong `VaultContentArea.jsx` | `[x]` |
+| 6 | Kiểm thử & Xác minh Toàn diện (`npm test`, `npm run build`) | `[x]` |
+| 7 | Backend & IPC: Flat Trash Listing trong `browseHandlers.js` & `originalPath` trong `vaultShared.js` | `[x]` |
+| 8 | UI: Hiển thị Vị trí ban đầu (`originalLocation`) cho tệp trong Thùng rác (`BrowserScreen.jsx`) | `[x]` |
+| 9 | Kiểm thử tự động Flat Trash (`flatTrashListing.test.js`) & Vite Build | `[x]` |

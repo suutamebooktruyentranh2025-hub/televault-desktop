@@ -12,6 +12,7 @@ export function GDriveErrorsTab({
   applyErrorSelection,
   handleSelectionClick,
   handleRetryFile,
+  handleRetryErrors,
 }) {
   return (
     <div className="h-full flex flex-col">
@@ -43,10 +44,16 @@ export function GDriveErrorsTab({
                   type="button"
                   className="px-3 py-1 bg-[#0066cc]/10 hover:bg-[#0066cc]/20 text-[#0066cc] rounded font-medium flex items-center gap-1 transition-colors"
                   onClick={() => {
-                    for (const id of selectedErrorIds) {
-                      handleRetryFile(id);
+                    const ids = Array.from(selectedErrorIds);
+                    if (typeof handleRetryErrors === 'function') {
+                      handleRetryErrors(ids);
+                    } else {
+                      for (const id of ids) {
+                        handleRetryFile(id);
+                      }
                     }
                     setSelectedErrorIds(new Set());
+                    if (lastSelectedErrorRef) lastSelectedErrorRef.current = null;
                   }}
                 >
                   {t('gdriveBtnRetrySelected')}

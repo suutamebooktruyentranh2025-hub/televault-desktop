@@ -5,6 +5,8 @@ const {
   entryName,
   isDir,
   effectiveTagsForPath,
+  isInTrash,
+  pathFromTrash,
 } = require('@televault/core');
 
 /** 
@@ -17,6 +19,7 @@ function serializeEntry(db, e, preloadedFolderTags = null) {
   const tags = e.path.endsWith('/')
     ? e.tags || []
     : effectiveTagsForPath(e.path, folderTags);
+  const inTrash = isInTrash(e.path);
   return {
     messageId: e.messageId,
     path: e.path,
@@ -27,6 +30,7 @@ function serializeEntry(db, e, preloadedFolderTags = null) {
     tags,
     localPath: e.localPath ?? null,
     isDir: isDir(e),
+    originalPath: inTrash ? pathFromTrash(e.path) : null,
   };
 }
 
@@ -74,6 +78,10 @@ function broadcastSharedVaultsChanged() {
   safeBroadcast('sharedVault:changed');
 }
 
+function broadcastTrashProgress(payload) {
+  safeBroadcast('vault:trashProgress', payload);
+}
+
 function broadcastDeleteProgress(payload) {
   safeBroadcast('vault:deleteProgress', payload);
 }
@@ -90,6 +98,7 @@ module.exports = {
   broadcastVaultChanged,
   broadcastTransfersChanged,
   broadcastSharedVaultsChanged,
+  broadcastTrashProgress,
   broadcastDeleteProgress,
   broadcastMoveProgress,
 };

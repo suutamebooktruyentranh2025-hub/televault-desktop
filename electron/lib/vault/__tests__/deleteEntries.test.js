@@ -118,3 +118,37 @@ test('deleteEntries: handles partial failure gracefully', async () => {
   // 50 deleted, 10 remaining in DB
   assert.equal(db.getAll().length, 10);
 });
+
+test('emptyTrash: deletes all items matching isInTrash with progress', async () => {
+  const initialFiles = [
+    { messageId: 1, path: '/Rác/file1.txt', size: 100 },
+    { messageId: 2, path: '/Rác/file2.txt', size: 200 },
+    { messageId: 3, path: '/normal/file3.txt', size: 300 },
+  ];
+
+  const db = createMockDb(initialFiles);
+  const invokeCalls = [];
+  const client = {
+    invoke: async (req) => {
+      invokeCalls.push(req);
+      return { _: 'ok' };
+    },
+  };
+  const queue = { onStatusChange: null, tasks: [], restorePaused() {}, clearFinished() {} };
+  const vault = new VaultService({
+    client,
+    db,
+    channel: {},
+    queue,
+    chatId: -100123456,
+  });
+
+  const progressEvents = [];
+  const result = await vault.emptyTrash((progress) => progressEvents.push({ ...progress }));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.deletedCount, 2);
+  assert.equal(db.getAll().length, 1);
+  assert.equal(db.getAll()[0].messageId, 3);
+  assert.equal(progressEvents[progressEvents.length - 1].percent, 100);
+});

@@ -632,6 +632,7 @@ export function BrowserScreen({
               currentFolder={currentFolder}
               selected={selectedIds?.has(file.messageId)}
               draggable={!readonly && !isTrash}
+              isTrash={isTrash}
               onDragStart={(e) => handleItemDragStart(e, 'file', file)}
               onDragEnd={handleItemDragEnd}
               isDragging={draggingItemKey === `file:${file.messageId}`}
@@ -1071,6 +1072,7 @@ const FileTableRow = memo(function FileTableRow({
   onDeleteForeverFile,
   onShowFileMenu,
 }) {
+  const { t } = useI18n();
   const fileDir = file.path ? file.path.substring(0, file.path.lastIndexOf('/') + 1) : '';
   const showPath = Boolean(fileDir && currentFolder && fileDir !== currentFolder);
 
@@ -1104,11 +1106,18 @@ const FileTableRow = memo(function FileTableRow({
             >
               {file.name}
             </span>
-            {showPath && (
+            {isTrash && file.originalPath ? (
+              <div
+                className="truncate text-[11px] font-normal text-[var(--gd-text-secondary)]"
+                title={`${t('originalLocation')}: ${file.originalPath}`}
+              >
+                <span className="opacity-70">{t('originalLocation')}:</span> {file.originalPath}
+              </div>
+            ) : showPath ? (
               <div className="truncate text-[11px] font-normal text-[var(--gd-text-secondary)]" title={file.path}>
                 {file.path}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </td>
@@ -1254,7 +1263,9 @@ const FileGridCard = memo(function FileGridCard({
   onDragStart,
   onDragEnd,
   isDragging = false,
+  isTrash = false,
 }) {
+  const { t } = useI18n();
   const ext = fileExt(file.name);
   const isImage = IMAGE_EXT.has(ext || '');
   const thumbSrc = isImage && file.localPath ? `file://${file.localPath}` : null;
@@ -1290,11 +1301,18 @@ const FileGridCard = memo(function FileGridCard({
           >
             {file.name}
           </span>
-          {showPath && (
+          {isTrash && file.originalPath ? (
+            <div
+              className="truncate text-[10px] font-normal text-[var(--gd-text-secondary)]"
+              title={`${t('originalLocation')}: ${file.originalPath}`}
+            >
+              <span className="opacity-70">{t('originalLocation')}:</span> {file.originalPath}
+            </div>
+          ) : showPath ? (
             <div className="truncate text-[10px] font-normal text-[var(--gd-text-secondary)]" title={file.path}>
               {file.path}
             </div>
-          )}
+          ) : null}
         </div>
         <GridTrashActions
           onRestore={onRestore}
@@ -1323,7 +1341,8 @@ const FileGridCard = memo(function FileGridCard({
     prev.isDragging === next.isDragging &&
     prev.actionsDisabled === next.actionsDisabled &&
     prev.actionsBusy === next.actionsBusy &&
-    prev.draggable === next.draggable
+    prev.draggable === next.draggable &&
+    prev.isTrash === next.isTrash
   );
 });
 

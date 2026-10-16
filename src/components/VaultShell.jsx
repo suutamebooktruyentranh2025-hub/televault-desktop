@@ -542,12 +542,15 @@ export function VaultShell({ accounts, activeAccountId, onSignOut, onSwitchAccou
           void actions.handleDownloadSelected();
         }
       }}
-      onMove={isSharedSection ? undefined : () => void actions.handleMoveSelected()}
-      onTrash={isSharedSection ? undefined : () => void actions.handleTrashSelected()}
-      onRestore={isSharedSection || actions.delete_forever_busy ? undefined : () => void actions.handleRestoreSelected()}
-      onDeleteForever={isSharedSection || actions.delete_forever_busy ? undefined : () => void actions.handleDeleteForeverSelected()}
+      onMove={isSharedSection || actions.delete_forever_busy || actions.trashBusy ? undefined : () => void actions.handleMoveSelected()}
+      onTrash={isSharedSection || actions.delete_forever_busy || actions.trashBusy ? undefined : () => void actions.handleTrashSelected()}
+      onRestore={isSharedSection || actions.delete_forever_busy || actions.trashBusy ? undefined : () => void actions.handleRestoreSelected()}
+      onDeleteForever={isSharedSection || actions.delete_forever_busy || actions.trashBusy ? undefined : () => void actions.handleDeleteForeverSelected()}
       readonly={isSharedSection}
       deleteForeverBusy={actions.delete_forever_busy}
+      deleteProgress={actions.deleteProgress}
+      trashBusy={actions.trashBusy}
+      trashProgress={actions.trashProgress}
     />
   ) : null;
 

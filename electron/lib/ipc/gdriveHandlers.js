@@ -190,7 +190,37 @@ function registerGDriveHandlers(ipcMain, ctx) {
     const svc = ctx.getGDriveSyncService();
     if (!svc) return { ok: false, error: 'Service not available' };
     try {
-      const res = await svc.retryFile(driveFileId);
+      const res = typeof svc.retryErrors === 'function'
+        ? svc.retryErrors([driveFileId])
+        : await svc.retryFile(driveFileId);
+      broadcastGDriveChanged();
+      return res;
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle('gdrive:retryErrors', async (_evt, { driveFileIds } = {}) => {
+    const svc = ctx.getGDriveSyncService();
+    if (!svc) return { ok: false, error: 'Service not available' };
+    try {
+      const res = typeof svc.retryErrors === 'function'
+        ? svc.retryErrors(driveFileIds)
+        : { ok: false, error: 'retryErrors not supported' };
+      broadcastGDriveChanged();
+      return res;
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle('gdrive:retryAllErrors', async () => {
+    const svc = ctx.getGDriveSyncService();
+    if (!svc) return { ok: false, error: 'Service not available' };
+    try {
+      const res = typeof svc.retryAllErrors === 'function'
+        ? svc.retryAllErrors()
+        : { ok: false, error: 'retryAllErrors not supported' };
       broadcastGDriveChanged();
       return res;
     } catch (e) {

@@ -90,6 +90,7 @@ export function GDriveSyncScreen() {
     lastSelectedErrorRef,
     applyErrorSelection,
     handleRetryFile,
+    handleRetryErrors,
     handleRetryAll,
     gdriveRecentSynced,
     selectedHistoryIds,
@@ -616,7 +617,12 @@ export function GDriveSyncScreen() {
                     <button
                       type="button"
                       className="text-[#0066cc] hover:underline font-semibold cursor-pointer"
-                      onClick={handleRetryAll}
+                      onClick={async () => {
+                        const res = await handleRetryAll();
+                        if (res?.ok) {
+                          setActiveSyncTab('queue');
+                        }
+                      }}
                     >
                       {t('gdriveSyncErrorActionRetryAll')}
                     </button>
@@ -645,6 +651,7 @@ export function GDriveSyncScreen() {
                     applyErrorSelection={applyErrorSelection}
                     handleSelectionClick={handleSelectionClick}
                     handleRetryFile={handleRetryFile}
+                    handleRetryErrors={handleRetryErrors}
                   />
                 </div>
               </div>

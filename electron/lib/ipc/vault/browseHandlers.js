@@ -8,6 +8,9 @@ const {
   folderSize,
   folderCounts,
   K_TRASH_FOLDER,
+  isTrashFolder,
+  isInTrash,
+  isDir,
   buildDashboardStats,
   visibleFiles,
   extractStoryFolder,
@@ -26,8 +29,17 @@ function registerBrowseHandlers(ipcMain, ctx) {
     const db = ctx.getDb();
     const all = db.getAll();
     const base = folder || '/';
-    const listing = listFolder(all, base);
+    const isTrash = isTrashFolder(base);
+    const listing = isTrash
+      ? { folders: [], files: all.filter((e) => isInTrash(e.path) && !isDir(e)) }
+      : listFolder(all, base);
     const { folderMetadataMap, currentCounts } = buildFolderListingMetadata(all, base, listing.folders);
+    if (isTrash) {
+      currentCounts.fileCount = listing.files.length;
+      currentCounts.totalFiles = listing.files.length;
+      currentCounts.folderCount = 0;
+      currentCounts.totalFolders = 0;
+    }
     const sorted = sortFolderListing(listing, all, base, {
       field: sortField,
       direction: sortDirection,

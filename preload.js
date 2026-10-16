@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('televault', {
       ipcRenderer.invoke('vault:restore', { messageIds, folders }),
     deletePermanent: (messageIds, folders) =>
       ipcRenderer.invoke('vault:deletePermanent', { messageIds, folders }),
+    emptyTrash: () => ipcRenderer.invoke('vault:emptyTrash'),
     setFolderTags: (folderPath, tags) =>
       ipcRenderer.invoke('vault:setFolderTags', { folderPath, tags }),
     renameTag: (from, to) => ipcRenderer.invoke('vault:renameTag', { from, to }),
@@ -103,6 +104,11 @@ contextBridge.exposeInMainWorld('televault', {
       const listener = (_evt, payload) => callback(payload);
       ipcRenderer.on('vault:deleteProgress', listener);
       return () => ipcRenderer.removeListener('vault:deleteProgress', listener);
+    },
+    onTrashProgress: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('vault:trashProgress', listener);
+      return () => ipcRenderer.removeListener('vault:trashProgress', listener);
     },
     onMoveProgress: (callback) => {
       const listener = (_evt, payload) => callback(payload);
@@ -178,6 +184,8 @@ contextBridge.exposeInMainWorld('televault', {
     startSync: () => ipcRenderer.invoke('gdrive:startSync'),
     setAutoSyncAfterScan: (enabled) => ipcRenderer.invoke('gdrive:setAutoSyncAfterScan', { enabled }),
     retryFile: (driveFileId) => ipcRenderer.invoke('gdrive:retryFile', { driveFileId }),
+    retryErrors: (driveFileIds) => ipcRenderer.invoke('gdrive:retryErrors', { driveFileIds }),
+    retryAllErrors: () => ipcRenderer.invoke('gdrive:retryAllErrors'),
     setPollInterval: (intervalMs) => ipcRenderer.invoke('gdrive:setPollInterval', { intervalMs }),
     setFilters: (ignored, allowed) => ipcRenderer.invoke('gdrive:setFilters', { ignored, allowed }),
     setTempDir: (tempDir) => ipcRenderer.invoke('gdrive:setTempDir', { tempDir }),
