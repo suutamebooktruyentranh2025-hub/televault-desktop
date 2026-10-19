@@ -319,8 +319,8 @@ export function GDriveSyncScreen() {
                 )
               )}
 
-              {/* Pause / Resume Button with floating tooltip: only shown when sync is relevant (not scanning) */}
-              {!isScanning && (gdriveIsPaused || isSyncing || gdriveQueue.length > 0) && (
+              {/* Pause / Resume Button with floating tooltip: only shown when syncing or paused (not when idle before sync starts) */}
+              {!isScanning && (gdriveIsPaused || isSyncing) && (
                 <div className="relative group/pause">
                   <button
                     type="button"
@@ -358,58 +358,54 @@ export function GDriveSyncScreen() {
                 </div>
               )}
 
-              {/* Scan Now Button with floating tooltip */}
-              <div className="relative group/scan">
-                <button
-                  type="button"
-                  className={`text-xs px-3.5 py-1.5 font-semibold rounded-lg transition-all flex items-center gap-1.5 shadow-xs ${
-                    isScanning
-                      ? 'bg-blue-600 text-white cursor-wait opacity-90'
-                      : isSyncing
-                      ? 'bg-zinc-200/80 dark:bg-zinc-800/80 text-zinc-400 dark:text-zinc-500 border border-[var(--gd-border)]/60 cursor-not-allowed opacity-60'
-                      : 'bg-[var(--gd-primary)] hover:opacity-90 text-white cursor-pointer active:scale-98'
-                  }`}
-                  onClick={isScanning || isSyncing ? undefined : handleScanNow}
-                  disabled={isScanning || isSyncing}
-                  aria-label={
-                    isScanning
-                      ? t('gdriveScanningTitle')
-                      : isSyncing
-                      ? t('gdriveScanDisabledSyncing')
-                      : t('gdriveScanAllTitle')
-                  }
-                >
-                  {isScanning ? (
-                    <>
-                      <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      <span>{t('gdriveStatusScanning')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      <span>{t('gdriveBtnScanDrive')}</span>
-                    </>
-                  )}
-                </button>
-                <div
-                  role="tooltip"
-                  className="pointer-events-none absolute right-0 top-full mt-1.5 z-40 hidden group-hover/scan:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
-                >
-                  <span className="absolute -top-1 right-4 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
-                  <span className="relative z-10">
-                    {isScanning
-                      ? t('gdriveScanningTitle')
-                      : isSyncing
-                      ? t('gdriveScanDisabledSyncing')
-                      : t('gdriveScanAllTitle')}
-                  </span>
+              {/* Scan Now Button with floating tooltip: hidden while syncing */}
+              {!isSyncing && (
+                <div className="relative group/scan">
+                  <button
+                    type="button"
+                    className={`text-xs px-3.5 py-1.5 font-semibold rounded-lg transition-all flex items-center gap-1.5 shadow-xs ${
+                      isScanning
+                        ? 'bg-blue-600 text-white cursor-wait opacity-90'
+                        : 'bg-[var(--gd-primary)] hover:opacity-90 text-white cursor-pointer active:scale-98'
+                    }`}
+                    onClick={isScanning ? undefined : handleScanNow}
+                    disabled={isScanning}
+                    aria-label={
+                      isScanning
+                        ? t('gdriveScanningTitle')
+                        : t('gdriveScanAllTitle')
+                    }
+                  >
+                    {isScanning ? (
+                      <>
+                        <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                        <span>{t('gdriveStatusScanning')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>{t('gdriveBtnScanDrive')}</span>
+                      </>
+                    )}
+                  </button>
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none absolute right-0 top-full mt-1.5 z-40 hidden group-hover/scan:flex flex-col items-center whitespace-nowrap rounded-md bg-zinc-900/95 dark:bg-zinc-800/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg border border-white/10 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+                  >
+                    <span className="absolute -top-1 right-4 h-2 w-2 rotate-45 bg-zinc-900/95 dark:bg-zinc-800/95 border-t border-l border-white/10" />
+                    <span className="relative z-10">
+                      {isScanning
+                        ? t('gdriveScanningTitle')
+                        : t('gdriveScanAllTitle')}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 

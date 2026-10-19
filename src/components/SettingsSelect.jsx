@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconCheck, IconChevronDown, IconChevronUp } from './DriveIcons';
 
-export function SettingsSelect({ value, onChange, options }) {
+export function SettingsSelect({
+  value,
+  onChange,
+  options = [],
+  className = '',
+  triggerClassName = '',
+  menuClassName = '',
+  size = 'default',
+  menuAlign = 'left',
+  menuPlacement = 'bottom',
+  disabled = false,
+  ariaLabel,
+  style,
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const selected = options.find((opt) => opt.value === value);
@@ -29,16 +42,34 @@ export function SettingsSelect({ value, onChange, options }) {
     setOpen(false);
   }
 
+  const sizeClass =
+    size === 'sm'
+      ? 'gd-settings-select--sm'
+      : size === 'xs'
+      ? 'gd-settings-select--xs'
+      : '';
+
+  const alignClass = menuAlign === 'right' ? 'gd-settings-select-menu--right' : '';
+  const placementClass = menuPlacement === 'top' ? 'gd-settings-select-menu--top' : '';
+
   return (
-    <div ref={wrapRef} className="gd-settings-select-wrap">
+    <div
+      ref={wrapRef}
+      style={style}
+      className={`gd-settings-select-wrap ${sizeClass} ${className}`.trim()}
+    >
       <button
         type="button"
-        className={`gd-settings-select-trigger${open ? ' gd-settings-select-trigger--open' : ''}`}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className={`gd-settings-select-trigger${open ? ' gd-settings-select-trigger--open' : ''} ${triggerClassName}`.trim()}
         aria-expanded={open}
         aria-haspopup="listbox"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => !disabled && setOpen((v) => !v)}
       >
-        <span className="gd-settings-select-trigger-label">{selected?.label}</span>
+        <span className="gd-settings-select-trigger-label">
+          {selected ? selected.label : String(value ?? '')}
+        </span>
         {open ? (
           <IconChevronUp className="gd-settings-select-chevron" />
         ) : (
@@ -46,7 +77,7 @@ export function SettingsSelect({ value, onChange, options }) {
         )}
       </button>
       {open && (
-        <div className="gd-settings-select-menu" role="listbox">
+        <div className={`gd-settings-select-menu ${alignClass} ${placementClass} ${menuClassName}`.trim()} role="listbox">
           {options.map((opt) => {
             const isSelected = opt.value === value;
             return (
@@ -61,7 +92,7 @@ export function SettingsSelect({ value, onChange, options }) {
                 <span className="gd-settings-select-check-slot">
                   {isSelected ? <IconCheck className="gd-settings-select-check" /> : null}
                 </span>
-                <span>{opt.label}</span>
+                <span className="whitespace-nowrap">{opt.label}</span>
               </button>
             );
           })}

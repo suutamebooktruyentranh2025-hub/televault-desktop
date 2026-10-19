@@ -1811,6 +1811,14 @@ body,
   width: 100%;
 }
 
+.gd-settings-select--sm {
+  width: 270px;
+}
+
+.gd-settings-select--xs {
+  width: 76px;
+}
+
 .gd-settings-select-trigger {
   display: flex;
   align-items: center;
@@ -1859,14 +1867,28 @@ body,
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
-  z-index: 40;
-  overflow: hidden;
+  right: auto;
+  min-width: 100%;
+  width: max-content;
+  max-width: 360px;
+  z-index: 50;
+  overflow-y: auto;
+  max-height: 280px;
   border-radius: 8px;
   border: 1px solid var(--gd-border);
   background: var(--gd-surface);
   box-shadow: var(--gd-shadow-md);
   padding: 4px 0;
+}
+
+.gd-settings-select-menu--right {
+  left: auto;
+  right: 0;
+}
+
+.gd-settings-select-menu--top {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .gd-settings-select-option {
@@ -1907,6 +1929,70 @@ body,
   width: 18px;
   height: 18px;
   color: var(--gd-accent);
+}
+
+/* Size modifier: sm (compact / toolbars) */
+.gd-settings-select--sm .gd-settings-select-trigger {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 10px;
+  gap: 8px;
+  font-size: 13px;
+  border: 1px solid var(--gd-border);
+  border-radius: 8px;
+}
+
+.gd-settings-select--sm .gd-settings-select-chevron {
+  width: 16px;
+  height: 16px;
+}
+
+.gd-settings-select--sm .gd-settings-select-option {
+  min-height: 34px;
+  padding: 6px 10px;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.gd-settings-select--sm .gd-settings-select-check-slot {
+  width: 16px;
+}
+
+.gd-settings-select--sm .gd-settings-select-check {
+  width: 14px;
+  height: 14px;
+}
+
+/* Size modifier: xs (micro / pagination) */
+.gd-settings-select--xs .gd-settings-select-trigger {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 12px;
+  border: 1px solid var(--gd-border);
+  border-radius: 6px;
+}
+
+.gd-settings-select--xs .gd-settings-select-chevron {
+  width: 14px;
+  height: 14px;
+}
+
+.gd-settings-select--xs .gd-settings-select-option {
+  min-height: 28px;
+  padding: 4px 8px;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.gd-settings-select--xs .gd-settings-select-check-slot {
+  width: 14px;
+}
+
+.gd-settings-select--xs .gd-settings-select-check {
+  width: 12px;
+  height: 12px;
 }
 
 .gd-settings-path-row {

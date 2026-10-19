@@ -1,5 +1,6 @@
 import React from 'react';
 import { IconFolder, IconFile, IconPdf, IconImage, IconVideo } from '../../../components/DriveIcons';
+import { SettingsSelect } from '../../../components/SettingsSelect';
 
 function formatSize(bytes) {
   if (!bytes || bytes <= 0) return '—';
@@ -196,31 +197,37 @@ export function GDriveCacheTable({
           </div>
 
           {/* Status Filter */}
-          <select
+          <SettingsSelect
             value={status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] text-[var(--gd-text)] cursor-pointer focus:outline-hidden focus:border-[var(--gd-primary)]"
-          >
-            <option value="all">{t('gdriveCacheStatusAll')}</option>
-            <option value="pending">{t('gdriveCacheStatusPending')}</option>
-            <option value="synced">{t('gdriveCacheStatusSynced')}</option>
-            <option value="queued">{t('gdriveCacheStatusQueued')}</option>
-            <option value="error">{t('gdriveCacheStatusError')}</option>
-            <option value="skipped">{t('gdriveCacheStatusSkipped')}</option>
-            <option value="trashed">{t('gdriveCacheStatusTrashed')}</option>
-            <option value="folder">{t('gdriveCacheStatusFolder')}</option>
-          </select>
+            onChange={(val) => handleStatusChange(val)}
+            options={[
+              { value: 'all', label: t('gdriveCacheStatusAll') },
+              { value: 'pending', label: t('gdriveCacheStatusPending') },
+              { value: 'synced', label: t('gdriveCacheStatusSynced') },
+              { value: 'queued', label: t('gdriveCacheStatusQueued') },
+              { value: 'error', label: t('gdriveCacheStatusError') },
+              { value: 'skipped', label: t('gdriveCacheStatusSkipped') },
+              { value: 'trashed', label: t('gdriveCacheStatusTrashed') },
+              { value: 'folder', label: t('gdriveCacheStatusFolder') },
+            ]}
+            className="shrink-0"
+            style={{ width: '160px' }}
+            size="sm"
+          />
 
           {/* Type Filter */}
-          <select
+          <SettingsSelect
             value={typeFilter}
-            onChange={(e) => handleTypeChange(e.target.value)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] text-[var(--gd-text)] cursor-pointer focus:outline-hidden focus:border-[var(--gd-primary)]"
-          >
-            <option value="all">{t('gdriveCacheTypeAll')}</option>
-            <option value="files">{t('gdriveCacheTypeFiles')}</option>
-            <option value="folders">{t('gdriveCacheTypeFolders')}</option>
-          </select>
+            onChange={(val) => handleTypeChange(val)}
+            options={[
+              { value: 'all', label: t('gdriveCacheTypeAll') },
+              { value: 'files', label: t('gdriveCacheTypeFiles') },
+              { value: 'folders', label: t('gdriveCacheTypeFolders') },
+            ]}
+            className="shrink-0"
+            style={{ width: '130px' }}
+            size="sm"
+          />
 
           {/* Refresh button */}
           <button
@@ -463,19 +470,22 @@ export function GDriveCacheTable({
           <span className="opacity-40">|</span>
           <div className="flex items-center gap-1">
             <span>{t('gdrivePaginationDisplay')}</span>
-            <select
+            <SettingsSelect
               value={limit}
-              onChange={(e) => {
-                setLimit(Number(e.target.value));
+              onChange={(val) => {
+                setLimit(Number(val));
                 setPage(1);
               }}
-              className="text-xs px-1.5 py-0.5 rounded border border-[var(--gd-border)] bg-[var(--gd-surface)] text-[var(--gd-text)] cursor-pointer"
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
-            </select>
+              options={[
+                { value: 25, label: '25' },
+                { value: 50, label: '50' },
+                { value: 100, label: '100' },
+                { value: 200, label: '200' },
+              ]}
+              className="w-18"
+              size="xs"
+              menuPlacement="top"
+            />
           </div>
         </div>
 

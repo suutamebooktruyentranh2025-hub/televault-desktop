@@ -1,5 +1,6 @@
 import React from 'react';
 import { IconFolder, IconFile, IconPdf, IconImage, IconVideo } from '../../../components/DriveIcons';
+import { SettingsSelect } from '../../../components/SettingsSelect';
 import { getRelativeSubfolder } from '../../../utils/gdrivePathUtils';
 
 function formatSize(bytes) {
@@ -194,15 +195,18 @@ export function GDriveFolderDetail({
           )}
 
           {/* Status Filter */}
-          <select
+          <SettingsSelect
             value={status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] text-[var(--gd-text)] cursor-pointer focus:outline-hidden focus:border-[var(--gd-primary)] shadow-2xs shrink-0"
-          >
-            <option value="all">{t('gdriveCacheStatusAll')}</option>
-            <option value="pending">{t('gdriveCacheStatusPending')}</option>
-            <option value="synced">{t('gdriveCacheStatusSynced')}</option>
-          </select>
+            onChange={(val) => handleStatusChange(val)}
+            options={[
+              { value: 'all', label: t('gdriveCacheStatusAll') },
+              { value: 'pending', label: t('gdriveCacheStatusPending') },
+              { value: 'synced', label: t('gdriveCacheStatusSynced') },
+            ]}
+            className="shrink-0"
+            style={{ width: '140px' }}
+            size="sm"
+          />
 
           {/* Include Subfolders Checkbox */}
           <label
@@ -469,19 +473,22 @@ export function GDriveFolderDetail({
           <span className="opacity-40">|</span>
           <div className="flex items-center gap-1.5">
             <span>{t('gdrivePaginationDisplay')}</span>
-            <select
+            <SettingsSelect
               value={limit}
-              onChange={(e) => {
-                setLimit(Number(e.target.value));
+              onChange={(val) => {
+                setLimit(Number(val));
                 setPage(1);
               }}
-              className="text-xs px-1.5 py-0.5 rounded-md border border-[var(--gd-border)] bg-[var(--gd-surface)] text-[var(--gd-text)] cursor-pointer"
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
-            </select>
+              options={[
+                { value: 25, label: '25' },
+                { value: 50, label: '50' },
+                { value: 100, label: '100' },
+                { value: 200, label: '200' },
+              ]}
+              className="w-18"
+              size="xs"
+              menuPlacement="top"
+            />
           </div>
         </div>
 

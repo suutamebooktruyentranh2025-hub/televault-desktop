@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconDeleteForever, IconFolder, IconRename } from '../components/DriveIcons';
+import { SettingsSelect } from '../components/SettingsSelect';
 import {
   filterDuplicateGroups,
   groupWastedBytes,
@@ -390,11 +391,30 @@ export function DuplicatesScreen({ onBack, currentFolder }) {
 
   return (
     <div className="gd-settings flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-      <section className="gd-settings-group shrink-0 !mb-0">
-        <div className="gd-settings-card">
-          <div className="flex flex-col gap-3 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="text-xs font-medium text-[var(--gd-text-secondary)]">
+      <section className="gd-settings-group shrink-0 !mb-0 relative z-20">
+        <div className="gd-settings-card !overflow-visible">
+          <div className="flex flex-col gap-2.5 p-3">
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-[160px] flex-1">
+                <input
+                  type="search"
+                  value={search_query}
+                  onChange={(event_object) => set_search_query(event_object.target.value)}
+                  placeholder={t('duplicatesSearchPlaceholder')}
+                  className="w-full text-xs pl-8 pr-3 h-[38px] rounded-lg border border-[var(--gd-border)] bg-[var(--gd-input-bg)] text-[var(--gd-text)] placeholder:text-[var(--gd-text-secondary)] focus:outline-hidden focus:border-[var(--gd-primary)] transition-colors"
+                  aria-label={t('duplicatesSearchPlaceholder')}
+                />
+                <svg
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--gd-text-secondary)] opacity-60 pointer-events-none"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <div className="shrink-0 flex items-center h-[38px] px-3 text-xs font-medium text-[var(--gd-text-secondary)] bg-[var(--gd-hover)]/70 rounded-lg border border-[var(--gd-border)]/60 whitespace-nowrap">
                 {search_query.trim()
                   ? t('duplicatesSummaryFiltered', {
                       shownGroups: visible_summary.groupCount,
@@ -407,39 +427,24 @@ export function DuplicatesScreen({ onBack, currentFolder }) {
                       files: summary_state.fileCount,
                     })}
               </div>
-              <button
-                type="button"
-                className="gd-settings-btn shrink-0"
-                onClick={() => void run_scan()}
-                disabled={loading_state || actions_busy}
-              >
-                {loading_state ? t('duplicatesScanning') : t('duplicatesScan')}
-              </button>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="search"
-                value={search_query}
-                onChange={(event_object) => set_search_query(event_object.target.value)}
-                placeholder={t('duplicatesSearchPlaceholder')}
-                className="gd-settings-path-field min-w-[200px] flex-1 px-3 py-2"
-                aria-label={t('duplicatesSearchPlaceholder')}
-              />
-              <select
+              <SettingsSelect
                 value={sort_field}
-                onChange={(event_object) => set_sort_field(event_object.target.value)}
-                className="gd-settings-path-field w-auto px-3 py-2"
-                aria-label={t('duplicatesSortLabel')}
-              >
-                <option value="wasted">{t('duplicatesSortWasted')}</option>
-                <option value="count">{t('duplicatesSortCount')}</option>
-                <option value="path">{t('duplicatesSortPath')}</option>
-                <option value="originalSmaller">{t('duplicatesSortOriginalSmaller')}</option>
-              </select>
+                onChange={(next_field) => set_sort_field(next_field)}
+                options={[
+                  { value: 'wasted', label: t('duplicatesSortWasted') },
+                  { value: 'count', label: t('duplicatesSortCount') },
+                  { value: 'path', label: t('duplicatesSortPath') },
+                  { value: 'originalSmaller', label: t('duplicatesSortOriginalSmaller') },
+                ]}
+                className="shrink-0"
+                size="sm"
+                ariaLabel={t('duplicatesSortLabel')}
+              />
+
               <button
                 type="button"
-                className="gd-settings-btn"
+                className="gd-settings-btn shrink-0 flex items-center justify-center w-[38px] h-[38px] !p-0 text-sm font-semibold rounded-lg hover:border-[var(--gd-primary)] transition-colors"
                 onClick={() =>
                   set_sort_direction((previous_direction) =>
                     previous_direction === 'desc' ? 'asc' : 'desc',
@@ -457,6 +462,35 @@ export function DuplicatesScreen({ onBack, currentFolder }) {
                 }
               >
                 {sort_direction === 'desc' ? '↓' : '↑'}
+              </button>
+
+              <button
+                type="button"
+                className="gd-settings-btn shrink-0 flex items-center gap-1.5 h-[38px] px-3 text-xs font-medium text-[var(--gd-primary)] hover:bg-[var(--gd-primary)]/10 transition-colors"
+                onClick={() => void run_scan()}
+                disabled={loading_state || actions_busy}
+              >
+                {loading_state ? (
+                  <>
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--gd-primary)] border-t-transparent" />
+                    <span>{t('duplicatesScanning')}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      className="w-3.5 h-3.5 shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3" />
+                    </svg>
+                    <span>{t('duplicatesScan')}</span>
+                  </>
+                )}
               </button>
             </div>
 
@@ -521,7 +555,7 @@ export function DuplicatesScreen({ onBack, currentFolder }) {
         </div>
       </section>
 
-      <section className="gd-settings-group mt-4 mb-0 min-h-0 flex-1 overflow-auto">
+      <section className="gd-settings-group mt-3 mb-0 min-h-0 flex-1 overflow-auto">
         {error_text ? <p className="mb-3 text-sm text-red-500">{error_text}</p> : null}
         {resolving_group_id ? (
           <p className="mb-3 text-sm text-[var(--gd-text-secondary)]">{t('duplicatesResolving')}</p>
