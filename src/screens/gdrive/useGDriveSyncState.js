@@ -20,6 +20,7 @@ export function useGDriveSyncState() {
   const [showGDrivePicker, setShowGDrivePicker] = useState(false);
   const [gdrivePollInterval, setGdrivePollInterval] = useState(300000);
   const [gdriveStatus, setGdriveStatus] = useState('disconnected');
+  const [gdriveDisconnecting, setGdriveDisconnecting] = useState(false);
   const [gdriveIsPaused, setGdriveIsPaused] = useState(false);
   const [gdriveLastError, setGdriveLastError] = useState(null);
   const [gdrivePendingCount, setGdrivePendingCount] = useState(0);
@@ -301,11 +302,29 @@ export function useGDriveSyncState() {
   }
 
   async function disconnectGDrive(opts) {
-    await window.televault?.gdrive?.disconnect(opts);
+    if (gdriveDisconnecting) return;
+    setGdriveDisconnecting(true);
+    try {
+      const payload = (opts && typeof opts === 'object' && !('nativeEvent' in opts) && !('target' in opts))
+        ? opts
+        : undefined;
+      const res = await window.televault?.gdrive?.disconnect(payload);
+      if (res?.ok === false && res?.error) {
+        showToast(t('gdriveToastDisconnectError', { error: res.error }), { variant: 'error' });
+      } else if (!payload?.silent) {
+        showToast(t('gdriveToastDisconnected'), { variant: 'info' });
+      }
+      return res;
+    } catch (err) {
+      console.error('[GDrive] Disconnect failed:', err);
+      showToast(t('gdriveToastDisconnectError', { error: String(err?.message || err) }), { variant: 'error' });
+    } finally {
+      setGdriveDisconnecting(false);
+    }
   }
 
   const handleReconnect = useCallback(async () => {
-    await disconnectGDrive();
+    await disconnectGDrive({ silent: true });
   }, []);
 
   async function toggleSub(driveId, enabled) {
@@ -742,6 +761,7 @@ export function useGDriveSyncState() {
     connectGDrive,
     cancelGDriveConnect,
     gdriveConnecting,
+    gdriveDisconnecting,
     gdriveAuthUrl,
     disconnectGDrive,
     handleReconnect,

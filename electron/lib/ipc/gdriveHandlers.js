@@ -114,9 +114,10 @@ function registerGDriveHandlers(ipcMain, ctx) {
 
   ipcMain.handle('gdrive:disconnect', (_evt, opts) => {
     const svc = ctx.getGDriveSyncService();
-    if (!svc) return { ok: false };
-    svc.disconnect(opts);
-    broadcastGDriveChanged();
+    if (!svc) return { ok: false, error: 'GDrive service not initialized' };
+    const safeOpts = (opts && typeof opts === 'object') ? opts : {};
+    svc.disconnect(safeOpts);
+    broadcastGDriveChanged(true);
     return { ok: true };
   });
 

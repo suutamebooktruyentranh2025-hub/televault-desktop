@@ -143,6 +143,8 @@ export function GDriveCacheExplorerTab({ t, folderExplorer, onRescanVault, onCan
             selectedFolderId={folderExplorer.selectedFolderId}
             selectedFolderPath={folderExplorer.selectedFolderPath}
             navigateToBreadcrumb={folderExplorer.navigateToBreadcrumb}
+            includeSubfolders={folderExplorer.includeSubfolders}
+            handleToggleIncludeSubfolders={folderExplorer.handleToggleIncludeSubfolders}
           />
         </div>
       </div>

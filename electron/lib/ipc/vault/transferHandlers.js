@@ -219,6 +219,7 @@ function registerTransferHandlers(ipcMain, ctx, requireVault, guardUpload) {
       ok: true,
       locale: db.getSetting('locale', 'vi'),
       theme: db.getSetting('theme', 'light'),
+      themePreset: db.getSetting('theme_preset', 'violet'),
       maxConcurrentTransfers: Number(db.getSetting('max_concurrent_transfers', '2')),
       cacheLimitGb: Number(db.getSetting('cache_limit_gb', '2')),
       autoResumeTransfers: db.getAutoResumeTransfers(),
@@ -249,6 +250,7 @@ function registerTransferHandlers(ipcMain, ctx, requireVault, guardUpload) {
     if (!db) return { ok: false };
     if (settings.locale != null) db.setSetting('locale', settings.locale);
     if (settings.theme != null) db.setSetting('theme', settings.theme);
+    if (settings.themePreset != null) db.setSetting('theme_preset', settings.themePreset);
     if (settings.maxConcurrentTransfers != null) {
       db.setSetting('max_concurrent_transfers', String(settings.maxConcurrentTransfers));
       ctx.getQueue()?.setMaxConcurrent(settings.maxConcurrentTransfers);

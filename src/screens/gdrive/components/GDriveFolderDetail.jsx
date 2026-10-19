@@ -1,5 +1,6 @@
 import React from 'react';
 import { IconFolder, IconFile, IconPdf, IconImage, IconVideo } from '../../../components/DriveIcons';
+import { getRelativeSubfolder } from '../../../utils/gdrivePathUtils';
 
 function formatSize(bytes) {
   if (!bytes || bytes <= 0) return '—';
@@ -166,6 +167,8 @@ export function GDriveFolderDetail({
   selectedFolderId,
   selectedFolderPath,
   navigateToBreadcrumb,
+  includeSubfolders,
+  handleToggleIncludeSubfolders,
 }) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const startRow = total > 0 ? (page - 1) * limit + 1 : 0;
@@ -200,6 +203,20 @@ export function GDriveFolderDetail({
             <option value="pending">{t('gdriveCacheStatusPending')}</option>
             <option value="synced">{t('gdriveCacheStatusSynced')}</option>
           </select>
+
+          {/* Include Subfolders Checkbox */}
+          <label
+            className="flex items-center gap-1.5 text-xs text-[var(--gd-text-secondary)] hover:text-[var(--gd-text)] cursor-pointer select-none px-2.5 py-1.5 rounded-lg border border-[var(--gd-border)] bg-[var(--gd-surface)] shadow-2xs hover:bg-[var(--gd-surface-hover)] transition-colors shrink-0"
+            title={t('gdriveCacheIncludeSubfoldersTooltip')}
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(includeSubfolders)}
+              onChange={(e) => handleToggleIncludeSubfolders?.(e.target.checked)}
+              className="rounded border-[var(--gd-border)] text-[var(--gd-primary)] focus:ring-0 cursor-pointer h-3.5 w-3.5"
+            />
+            <span className="font-medium text-[11px]">{t('gdriveCacheIncludeSubfolders')}</span>
+          </label>
         </div>
 
 
@@ -270,6 +287,18 @@ export function GDriveFolderDetail({
                     <span className="text-xs font-medium text-[var(--gd-text-secondary)]">
                       {loading ? t('loading') : t('gdriveFolderEmptyOrUnscanned')}
                     </span>
+                    {!includeSubfolders && !loading && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleIncludeSubfolders?.(true)}
+                        className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-[var(--gd-primary)] text-white hover:opacity-90 font-medium cursor-pointer transition-all shadow-2xs inline-flex items-center gap-1.5"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                        </svg>
+                        {t('gdriveCacheBtnViewSubfolderFiles')}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -318,6 +347,19 @@ export function GDriveFolderDetail({
                           >
                             {item.name}
                           </span>
+                          {includeSubfolders && !item.isFolder && item.drivePath && (() => {
+                            const subfolder = getRelativeSubfolder(item.drivePath, selectedFolderPath, item.name);
+                            if (!subfolder) return null;
+                            return (
+                              <span
+                                className="text-[10px] text-[var(--gd-text-secondary)] truncate flex items-center gap-1 opacity-75 mt-0.5"
+                                title={item.drivePath}
+                              >
+                                <span className="opacity-60">📁</span>
+                                <span>{subfolder}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                     </td>

@@ -27,6 +27,7 @@ export function GDriveSettingsTab({
   toggleSub,
   removeSub,
   disconnectGDrive,
+  gdriveDisconnecting,
 }) {
   return (
     <div className="h-full overflow-y-auto p-5 space-y-5 text-[var(--gd-text)]">
@@ -296,10 +297,11 @@ export function GDriveSettingsTab({
         </div>
         <button
           type="button"
-          className="text-xs px-3.5 py-2 border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-lg font-semibold transition-all cursor-pointer"
-          onClick={disconnectGDrive}
+          disabled={gdriveDisconnecting}
+          className="text-xs px-3.5 py-2 border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-lg font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => disconnectGDrive()}
         >
-          🔌 {t('gdriveDisconnect')}
+          🔌 {gdriveDisconnecting ? t('gdriveDisconnecting') : t('gdriveDisconnect')}
         </button>
       </div>
     </div>

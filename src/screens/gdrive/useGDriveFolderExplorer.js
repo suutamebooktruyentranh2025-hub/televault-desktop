@@ -63,6 +63,28 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
     setPage(1);
   }, []);
 
+  // ── Include Subfolders Filter ──
+  const [includeSubfolders, setIncludeSubfolders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('televault_gdrive_include_subfolders');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+  const includeSubfoldersManualOverrideRef = useRef(false);
+
+  const handleToggleIncludeSubfolders = useCallback((val) => {
+    includeSubfoldersManualOverrideRef.current = true;
+    setIncludeSubfolders((prev) => {
+      const nextVal = typeof val === 'boolean' ? val : !prev;
+      try {
+        localStorage.setItem('televault_gdrive_include_subfolders', String(nextVal));
+      } catch {}
+      return nextVal;
+    });
+    setPage(1);
+  }, []);
+
   // ── Summary (reuse existing summary hook logic) ──
   const [summary, setSummary] = useState({
     totalFiles: 0,
@@ -239,6 +261,7 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
         search: debouncedSearch,
         status,
         hideIgnored,
+        includeSubfolders,
         limit,
         offset,
         sortBy,
@@ -259,7 +282,7 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [selectedFolderId, debouncedSearch, status, hideIgnored, limit, page, sortBy, sortOrder]);
+  }, [selectedFolderId, debouncedSearch, status, hideIgnored, includeSubfolders, limit, page, sortBy, sortOrder]);
 
   useEffect(() => {
     if (gdriveConnected) fetchDetail();
@@ -342,6 +365,11 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
     try {
       localStorage.setItem('televault_gdrive_folder_status', newStatus);
     } catch {}
+    if (newStatus === 'synced' && !includeSubfoldersManualOverrideRef.current) {
+      setIncludeSubfolders(true);
+    } else if (newStatus === 'all' && !includeSubfoldersManualOverrideRef.current) {
+      setIncludeSubfolders(false);
+    }
     setPage(1);
   };
 
@@ -523,6 +551,8 @@ export function useGDriveFolderExplorer({ gdriveConnected } = {}) {
     // Filter
     hideIgnored,
     handleToggleHideIgnored,
+    includeSubfolders,
+    handleToggleIncludeSubfolders,
 
     // Summary
     summary,

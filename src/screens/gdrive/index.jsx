@@ -67,6 +67,7 @@ export function GDriveSyncScreen() {
     toggleSub,
     removeSub,
     disconnectGDrive,
+    gdriveDisconnecting,
     activeSyncTab,
     setActiveSyncTab,
     gdriveQueue,
@@ -757,6 +758,7 @@ export function GDriveSyncScreen() {
                   toggleSub={toggleSub}
                   removeSub={removeSub}
                   disconnectGDrive={disconnectGDrive}
+                  gdriveDisconnecting={gdriveDisconnecting}
                 />
               </div>
             )}
