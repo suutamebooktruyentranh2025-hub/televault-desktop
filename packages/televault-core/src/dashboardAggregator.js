@@ -110,7 +110,7 @@ function buildDashboardStats(all, options = {}) {
   const rangeDays = options.rangeDays ?? 30;
   const today = options.today ?? new Date();
   const timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const topN = options.topN ?? 10;
+  const topN = options.topN ?? 100;
   const includeDayFiles = options.includeDayFiles ?? false;
   const fmt = getLocalDateFormatter(timeZone);
 

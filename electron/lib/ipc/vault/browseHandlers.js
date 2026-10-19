@@ -140,13 +140,14 @@ function getDayBoundsUtc(dateStr, timeZone) {
   };
 }
 
-  ipcMain.handle('vault:getDashboard', (_evt, { rangeDays = 30 } = {}) => {
+  ipcMain.handle('vault:getDashboard', (_evt, { rangeDays = 30, topN = 100 } = {}) => {
     if (!ctx.isReady()) {
       return { ok: false, error: 'not_ready' };
     }
     const entries = ctx.getDb()?.getDashboardEntries?.() || ctx.getDb()?.getAll() || [];
     const stats = buildDashboardStats(entries, {
       rangeDays: Number(rangeDays) || 30,
+      topN: Math.max(10, Math.min(Number(topN) || 100, 500)),
       includeDayFiles: false,
     });
     return { ok: true, stats };

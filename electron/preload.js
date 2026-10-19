@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('televault', {
       ipcRenderer.invoke('vault:getListing', { folder, sortField, sortDirection }),
     getTree: (expanded) => ipcRenderer.invoke('vault:getTree', { expanded }),
     getStats: () => ipcRenderer.invoke('vault:getStats'),
-    getDashboard: (rangeDays) => ipcRenderer.invoke('vault:getDashboard', { rangeDays }),
+    getDashboard: (rangeDays, topN) => ipcRenderer.invoke('vault:getDashboard', { rangeDays, topN }),
     getDayFiles: (date, limit) => ipcRenderer.invoke('vault:getDayFiles', { date, limit }),
     search: (query, tags) => ipcRenderer.invoke('vault:search', { query, tags }),
     allTags: (opts) => ipcRenderer.invoke('vault:allTags', opts),

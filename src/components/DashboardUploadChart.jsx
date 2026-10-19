@@ -74,7 +74,7 @@ export function DashboardUploadChart({
   const lastDate = points.at(-1)?.date;
 
   const selectedIndex = selectedDate ? points.findIndex((p) => p.date === selectedDate) : -1;
-  const activeIndex = hoveredIndex !== null ? hoveredIndex : (selectedIndex >= 0 ? selectedIndex : null);
+  const activeIndex = hoveredIndex !== null ? hoveredIndex : null;
   const activeCoord = activeIndex !== null && coords[activeIndex] ? coords[activeIndex] : null;
 
   return (
@@ -205,7 +205,7 @@ export function DashboardUploadChart({
                   onMouseEnter={() => setHoveredIndex(i)}
                   onClick={() => {
                     if (onSelectDate) {
-                      onSelectDate(selectedDate === dayDate ? null : dayDate);
+                      onSelectDate(dayDate);
                     }
                   }}
                   role="button"
@@ -215,7 +215,7 @@ export function DashboardUploadChart({
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
                       if (onSelectDate) {
-                        onSelectDate(selectedDate === dayDate ? null : dayDate);
+                        onSelectDate(dayDate);
                       }
                     }
                   }}
@@ -256,7 +256,6 @@ export function DashboardUploadChart({
       )}
       <div className="gd-dashboard-chart-footer">
         <span className="gd-dashboard-chart-caption">{yAxisLabel}</span>
-        <span className="gd-dashboard-chart-hint">{t('dashboardClickToInspectDay')}</span>
       </div>
     </div>
   );
