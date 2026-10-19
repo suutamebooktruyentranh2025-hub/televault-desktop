@@ -1,3 +1,33 @@
+# Release Notes - TeleVault Desktop v0.3.3
+
+**Ngày phát hành / Release Date:** 2026-10-19  
+**Phiên bản / Version:** `v0.3.3` (So sánh với `v0.3.2`)  
+**Mục tiêu chính / Milestone:** Bộ sưu tập 12 Chủ đề giao diện (Themes) & Thiết kế lại Cài đặt, Bảng xếp hạng Top Thư mục & Top File (Phân trang, Sắp xếp đa cột, Tooltip nổi), Tối ưu hoá Bộ lọc Thẻ (Tag Filter) & Thanh công cụ Quản lý tệp trùng lặp.
+
+---
+
+## 🌟 Điểm nổi bật v0.3.3 (Release Highlights)
+
+- 🎨 **Bộ sưu tập 12 Chủ đề giao diện & Bộ chọn trực quan (12 Theme Options & Card Picker)**:
+  - Hỗ trợ 12 phong cách giao diện cá nhân hóa: Dark, Light, Telegram, Midnight, Slate, Ocean, Forest, Sunset, Cyberpunk, Rose, Lavender, Amber.
+  - Bộ chọn chủ đề dạng thẻ (`ThemeCardPicker`) trực quan, hiển thị bảng màu thực tế (palette preview) giúp dễ dàng lựa chọn.
+- ⚙️ **Thiết kế lại khu vực Cài đặt (Settings Screen Redesign)**:
+  - Phân vùng cấu hình rõ ràng: Giao diện & Hiển thị, Kiểm tra Cập nhật phần mềm (Update Checker), và Khối Liên hệ Admin / Hỗ trợ (`AdminContactLinks`).
+  - Chuẩn hoá toàn bộ các dropdown chọn lựa bằng component tuỳ chỉnh `SettingsSelect`, loại bỏ select mặc định thô của trình duyệt và đồng bộ visual hoàn hảo theo mọi theme.
+- 📊 **Nâng cấp Bảng điều khiển (Dashboard Rank Lists & Upload Details)**:
+  - Mở rộng hiển thị Top 100 thư mục truyện và Top 100 file tải lên nhiều nhất.
+  - Tích hợp phân trang phía client linh hoạt (25 / 50 / 100 mục mỗi trang) kèm thanh điều khiển một hàng cực kỳ tinh gọn.
+  - Bổ sung sắp xếp đa cột (theo tên, số tệp/dung lượng) với chuẩn tooltip nổi cao cấp (Floating Dark Bubble) chống trễ và hiển thị rõ ràng.
+  - Tối ưu thẻ "Chi tiết tải lên ngày...": tự động hiển thị ngày gần nhất ở trạng thái thu gọn, loại bỏ viền focus thừa, hỗ trợ đóng/mở mượt mà.
+- 🏷️ **Sửa lỗi triệt để Bộ lọc Thẻ (Tag Filter Stability)**:
+  - Khắc phục hiện tượng lặp vô hạn và nhấp nháy khi duyệt file theo tag (loại bỏ side-effect đệ quy trong IPC handler `vault:allTags` và debounce listener).
+- 🧹 **Tinh gọn Giao diện Quản lý tệp trùng lặp (Duplicates Screen)**:
+  - Tinh gọn thanh công cụ, đồng bộ bộ lọc trạng thái và phương thức sắp xếp bằng `SettingsSelect`.
+- 🌐 **Chuẩn hóa Quốc tế hóa (i18n)**:
+  - Toàn bộ tên theme, mô tả, nhãn phân trang và tooltip sắp xếp được đồng bộ song ngữ đối xứng 100% giữa Tiếng Việt và Tiếng Anh (`vi` và `en` trong `locales.js`).
+
+---
+
 # Release Notes - TeleVault Desktop v0.3.2
 
 **Ngày phát hành / Release Date:** 2026-10-16  
