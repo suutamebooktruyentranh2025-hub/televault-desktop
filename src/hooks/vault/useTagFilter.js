@@ -66,9 +66,17 @@ export function useTagFilter({ chatId = null } = {}) {
 
   useEffect(() => {
     void refresh();
-    const unsubVault = api?.onChanged?.(() => void refresh());
-    const unsubShared = window.televault?.sharedVault?.onChanged?.(() => void refresh());
+    let debounceTimer = null;
+    const handleChanged = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void refresh();
+      }, 300);
+    };
+    const unsubVault = api?.onChanged?.(handleChanged);
+    const unsubShared = window.televault?.sharedVault?.onChanged?.(handleChanged);
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsubVault?.();
       unsubShared?.();
     };

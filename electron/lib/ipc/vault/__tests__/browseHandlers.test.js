@@ -64,3 +64,42 @@ test('vault:getFoldersDetails returns metadata for requested folder paths', asyn
     assert.equal(emptyFolder.size, 0);
     assert.equal(emptyFolder.fileCount, 0);
 });
+
+test('vault:allTags returns tag index without triggering network resync', async () => {
+  const handlers = {};
+  const mockIpcMain = {
+    handle: (name, fn) => {
+      handlers[name] = fn;
+    },
+  };
+  let channelCalled = false;
+  const mockDb = {
+    reconcileFolderTagsFromMarkers: () => {},
+    foldersByTag: () => ({
+      'Truyện xưa': ['/Others/Tiết Nhơn Quý Chinh Đông (CBZ)/'],
+    }),
+    allTags: () => ({
+      'Truyện xưa': 5,
+      'OrphanedTag': 1, // tag with no folders in foldersByTag
+    }),
+    allTagNames: () => ['OrphanedTag', 'Truyện xưa'],
+  };
+  const ctx = {
+    isReady: () => true,
+    getDb: () => mockDb,
+    getChannel: () => ({
+      resyncDirMarkers: async () => {
+        channelCalled = true;
+      },
+    }),
+  };
+
+  registerBrowseHandlers(mockIpcMain, ctx);
+  assert.ok(typeof handlers['vault:allTags'] === 'function');
+
+  const res = await handlers['vault:allTags']({}, {});
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.names, ['OrphanedTag', 'Truyện xưa']);
+  assert.equal(res.tags['Truyện xưa'], 5);
+  assert.equal(channelCalled, false, 'vault:allTags should never call channel network resync');
+});

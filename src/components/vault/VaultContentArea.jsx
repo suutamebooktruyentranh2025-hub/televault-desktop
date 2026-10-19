@@ -276,7 +276,7 @@ export function VaultContentArea({
           folders={isTagFiltered ? sortedTagFolders : sharedVaults.folders}
           files={isTagFiltered ? [] : sharedVaults.files}
           currentFolderCounts={isTagFiltered ? null : sharedVaults.currentFolderCounts}
-          loading={sharedVaults.loading || sharedVaults.scanning || (isTagFiltered && tagFilter?.tagFilterLoading)}
+          loading={isTagFiltered ? Boolean(tagFilter?.tagFilterLoading) : (sharedVaults.loading || sharedVaults.scanning)}
           emptyText={
             isTagFiltered
               ? t('tagFoldersEmpty')
@@ -462,7 +462,7 @@ export function VaultContentArea({
           folders={isTagFiltered ? sortedTagFolders : vault.folders}
           files={isTagFiltered ? [] : vault.files}
           currentFolderCounts={isTagFiltered ? null : vault.currentFolderCounts}
-          loading={vault.loading || (isTagFiltered && tagFilter.tagFilterLoading)}
+          loading={isTagFiltered ? Boolean(tagFilter?.tagFilterLoading) : vault.loading}
           emptyText={
             isTagFiltered
               ? t('tagFoldersEmpty')

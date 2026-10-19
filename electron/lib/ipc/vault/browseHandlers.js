@@ -200,29 +200,12 @@ function getDayBoundsUtc(dateStr, timeZone) {
     return ctx.getDb?.() || null;
   }
 
-  ipcMain.handle('vault:allTags', async (_evt, { chatId } = {}) => {
+  ipcMain.handle('vault:allTags', (_evt, { chatId } = {}) => {
     const db = resolveDb(chatId);
     if (!db) return { ok: false, tags: {}, foldersByTag: {} };
     db.reconcileFolderTagsFromMarkers();
-    let foldersByTag = db.foldersByTag();
+    const foldersByTag = db.foldersByTag();
     const tagCounts = db.allTags();
-
-    const needsTelegramResync = Object.keys(tagCounts).some((tag) => !(foldersByTag[tag]?.length));
-    if (needsTelegramResync) {
-      const channel = (chatId != null && chatId !== '')
-        ? ctx.getSharedVaults?.()?.getInstance?.(Number(chatId))?.channel
-        : ctx.getChannel?.();
-      const vaultChatId = Number(chatId) || db.getVaultChatId();
-      if (channel && vaultChatId) {
-        try {
-          await channel.resyncDirMarkers(vaultChatId);
-          foldersByTag = db.foldersByTag();
-        } catch (e) {
-          console.error('[vault:allTags resync]', e);
-        }
-      }
-    }
-
     return { ok: true, tags: tagCounts, names: db.allTagNames(), foldersByTag };
   });
 
