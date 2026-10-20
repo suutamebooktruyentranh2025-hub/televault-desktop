@@ -42,42 +42,79 @@ function isNewerVersion(remote, current) {
 
 /**
  * Bóc tách nội dung Markdown release notes thành danh sách mục phân loại.
+ * Hỗ trợ các thẻ: [Mới], [Sửa lỗi], [Cải tiến], Conventional Commits (feat:, fix:, perf:),
+ * và các biểu tượng cảm xúc (✨, ⚡, 🐛, 🔄, v.v.).
  * @param {string} markdown
  * @returns {Array<{ type: 'new' | 'fix' | 'improve' | 'other', text: string }>}
  */
 function parseChangelog(markdown) {
   if (!markdown || typeof markdown !== 'string') return [];
-  const lines = markdown.split(/\r?\n/);
+  const normalized = markdown.replace(/\\n/g, '\n');
+  const lines = normalized.split(/\r?\n/);
   const results = [];
-  for (let line of lines) {
-    line = line.trim();
-    if (!line || line.startsWith('#')) continue;
-    let cleanLine = line.replace(/^[-*•]\s+/, '').trim();
+
+  for (let rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('---')) continue;
+    // Bỏ qua dòng thông tin metadata release
+    if (/^\*\*(?:Ngày phát hành|Release Date|Phiên bản|Version|Mục tiêu|Milestone|Full Changelog):?\*\*/i.test(trimmed)) {
+      continue;
+    }
+
+    // Chỉ nhận các dòng gạch đầu dòng hoặc đánh số
+    const isBullet = /^[-*•+]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed);
+    if (!isBullet) continue;
+
+    let cleanLine = trimmed.replace(/^[-*•+]\s+/, '').replace(/^\d+\.\s+/, '').trim();
     if (!cleanLine) continue;
 
     let type = 'other';
+
+    // Nhận diện và loại bỏ emoji đầu dòng nếu có
+    let emojiType = null;
+    if (/^[✨🌟⭐]\s*/u.test(cleanLine)) {
+      emojiType = 'new';
+      cleanLine = cleanLine.replace(/^[✨🌟⭐]\s*/u, '');
+    } else if (/^[🐛🐞🔧]\s*/u.test(cleanLine)) {
+      emojiType = 'fix';
+      cleanLine = cleanLine.replace(/^[🐛🐞🔧]\s*/u, '');
+    } else if (/^[⚡🔄🎨📈⚙️🌐🧪]\s*/u.test(cleanLine)) {
+      emojiType = 'improve';
+      cleanLine = cleanLine.replace(/^[⚡🔄🎨📈⚙️🌐🧪]\s*/u, '');
+    }
+
+    // Nhận diện tiền tố tag hoặc conventional commit
     if (
-      /^\[?(?:Mới|New|Feature)\]?[:\s]*/i.test(cleanLine) ||
+      /^\[?(?:Mới|New|Feature|Tính năng)\]?[:\s]*/i.test(cleanLine) ||
       /^feat(?:\(.*?\))?:\s*/i.test(cleanLine)
     ) {
       type = 'new';
-      cleanLine = cleanLine.replace(/^\[?(?:Mới|New|Feature)\]?[:\s]*/i, '').replace(/^feat(?:\(.*?\))?:\s*/i, '');
+      cleanLine = cleanLine
+        .replace(/^\[?(?:Mới|New|Feature|Tính năng)\]?[:\s]*/i, '')
+        .replace(/^feat(?:\(.*?\))?:\s*/i, '');
     } else if (
-      /^\[?(?:Sửa|Fix|Bugfix)\]?[:\s]*/i.test(cleanLine) ||
+      /^\[?(?:Sửa|Sửa lỗi|Fix|Bugfix|Bug|Hotfix)\]?[:\s]*/i.test(cleanLine) ||
       /^fix(?:\(.*?\))?:\s*/i.test(cleanLine)
     ) {
       type = 'fix';
-      cleanLine = cleanLine.replace(/^\[?(?:Sửa|Fix|Bugfix)\]?[:\s]*/i, '').replace(/^fix(?:\(.*?\))?:\s*/i, '');
+      cleanLine = cleanLine
+        .replace(/^\[?(?:Sửa|Sửa lỗi|Fix|Bugfix|Bug|Hotfix)\]?[:\s]*/i, '')
+        .replace(/^fix(?:\(.*?\))?:\s*/i, '');
     } else if (
-      /^\[?(?:Cải tiến|Improve|Enhancement|Tối ưu)\]?[:\s]*/i.test(cleanLine) ||
+      /^\[?(?:Cải tiến|Improve|Enhancement|Tối ưu|Update|Nâng cấp|Perf|Hiệu năng)\]?[:\s]*/i.test(cleanLine) ||
       /^(?:perf|refactor)(?:\(.*?\))?:\s*/i.test(cleanLine)
     ) {
       type = 'improve';
       cleanLine = cleanLine
-        .replace(/^\[?(?:Cải tiến|Improve|Enhancement|Tối ưu)\]?[:\s]*/i, '')
+        .replace(/^\[?(?:Cải tiến|Improve|Enhancement|Tối ưu|Update|Nâng cấp|Perf|Hiệu năng)\]?[:\s]*/i, '')
         .replace(/^(?:perf|refactor)(?:\(.*?\))?:\s*/i, '');
+    } else if (emojiType) {
+      type = emojiType;
     }
-    results.push({ type, text: cleanLine.trim() });
+
+    if (cleanLine.trim()) {
+      results.push({ type, text: cleanLine.trim() });
+    }
   }
   return results;
 }
@@ -176,12 +213,12 @@ function followRedirectGet(targetUrl, options = {}, redirectCount = 0) {
 /**
  * Kiểm tra phiên bản mới từ GitHub Releases.
  * @param {object} [opts]
- * @param {string} [opts.repo='suutamebooktruyentranh2025-hub/televault']
+ * @param {string} [opts.repo='suutamebooktruyentranh2025-hub/televault-desktop']
  * @param {string} [opts.currentVersion]
  * @returns {Promise<object>}
  */
 async function checkForUpdate(opts = {}) {
-  const repo = opts.repo || 'suutamebooktruyentranh2025-hub/televault';
+  const repo = opts.repo || 'suutamebooktruyentranh2025-hub/televault-desktop';
   const currentVersion = opts.currentVersion || (app?.getVersion ? app.getVersion() : '0.3.1');
   const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
 

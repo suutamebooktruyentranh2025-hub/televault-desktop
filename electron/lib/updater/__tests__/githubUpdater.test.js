@@ -161,3 +161,52 @@ test('installUpdate: on darwin falls back to openPath if mounting/copying fails'
   assert.ok(execCommands.some((c) => c.cmd === 'hdiutil' && c.args[0] === 'detach'));
 });
 
+test('parseChangelog: classifies tags, emojis, and skips metadata headers', () => {
+  const { parseChangelog } = require('../githubUpdater');
+
+  const rawMarkdown = `
+# Release Notes - TeleVault Desktop v0.4.0
+
+**Ngày phát hành / Release Date:** 2026-10-20  
+**Phiên bản / Version:** \`v0.4.0\`  
+**Mục tiêu chính / Milestone:** Nâng cấp updater  
+**Full Changelog**: https://github.com/test/compare/v0.3.3...v0.4.0  
+
+---
+
+## 🌟 Điểm nổi bật (Release Highlights)
+
+- ✨ [Mới] Tính năng đồng bộ đám mây mới
+- 🐛 fix: Sửa lỗi tràn bộ nhớ khi tải file lớn
+- ⚡ **Tự động Cài đặt và Khởi động lại trên macOS**
+- 1. Cải tiến hiệu năng quét tệp tin
+Thông tin không có gạch đầu dòng (sẽ bị bỏ qua)
+`;
+
+  const parsed = parseChangelog(rawMarkdown);
+
+  assert.equal(parsed.length, 4);
+  assert.equal(parsed[0].type, 'new');
+  assert.equal(parsed[0].text, 'Tính năng đồng bộ đám mây mới');
+
+  assert.equal(parsed[1].type, 'fix');
+  assert.equal(parsed[1].text, 'Sửa lỗi tràn bộ nhớ khi tải file lớn');
+
+  assert.equal(parsed[2].type, 'improve');
+  assert.equal(parsed[2].text, '**Tự động Cài đặt và Khởi động lại trên macOS**');
+
+  assert.equal(parsed[3].type, 'improve');
+  assert.equal(parsed[3].text, 'hiệu năng quét tệp tin');
+});
+
+test('extractReleaseNotes: extracts matching version block from RELEASE_NOTES.md', () => {
+  const { extractReleaseNotes } = require('../../../../scripts/extract-release-notes');
+
+  const notes = extractReleaseNotes('v0.4.0');
+  assert.ok(notes.includes('# Release Notes - TeleVault Desktop v0.4.0'));
+  assert.ok(notes.includes('Tự động Cài đặt và Khởi động lại trên macOS'));
+  // Does not leak previous release notes
+  assert.ok(!notes.includes('# Release Notes - TeleVault Desktop v0.3.3'));
+});
+
+

@@ -5,6 +5,7 @@ release/
 .env
 .env.local
 *.log
+RELEASE_BODY.md
 
 # Superpowers skills
 .agents/
