@@ -219,7 +219,7 @@ function followRedirectGet(targetUrl, options = {}, redirectCount = 0) {
  */
 async function checkForUpdate(opts = {}) {
   const repo = opts.repo || 'suutamebooktruyentranh2025-hub/televault-desktop';
-  const currentVersion = opts.currentVersion || (app?.getVersion ? app.getVersion() : '0.3.1');
+  const currentVersion = opts.currentVersion || (app?.getVersion ? app.getVersion() : require('../../../package.json').version);
   const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
 
   const res = await followRedirectGet(apiUrl, {

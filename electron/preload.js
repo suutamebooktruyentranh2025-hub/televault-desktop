@@ -242,6 +242,7 @@ contextBridge.exposeInMainWorld('televault', {
     pickDirectory: () => ipcRenderer.invoke('shell:pickDirectory'),
   },
   updater: {
+    getVersion: () => ipcRenderer.invoke('update:getVersion'),
     checkUpdate: (opts) => ipcRenderer.invoke('update:check', opts),
     downloadUpdate: (downloadInfo) => ipcRenderer.invoke('update:download', downloadInfo),
     installUpdate: (filePath) => ipcRenderer.invoke('update:install', { filePath }),

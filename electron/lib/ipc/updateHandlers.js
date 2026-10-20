@@ -10,6 +10,10 @@ const { safeBroadcast } = require('./vault/vaultShared');
  * @param {import('electron').IpcMain} ipcMain
  */
 function registerUpdateHandlers(ipcMain) {
+  ipcMain.handle('update:getVersion', () => {
+    return require('electron').app?.getVersion ? require('electron').app.getVersion() : require('../../../package.json').version;
+  });
+
   ipcMain.handle('update:check', async (_evt, opts) => {
     try {
       const result = await checkForUpdate(opts);

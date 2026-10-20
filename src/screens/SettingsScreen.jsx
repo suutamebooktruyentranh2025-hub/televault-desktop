@@ -125,7 +125,9 @@ export function SettingsScreen({ account, onSignOut, onOpenUpdateModal }) {
   const { theme, setTheme } = useTheme();
   const { confirm } = useDialog();
   const { showToast } = useToast();
-  const [appVersion, setAppVersion] = useState('0.3.1');
+  const [appVersion, setAppVersion] = useState(() => {
+    return typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
+  });
   const [autoCheckUpdate, setAutoCheckUpdate] = useState(() => {
     return localStorage.getItem('televault_auto_check_update') !== 'false';
   });
@@ -144,7 +146,7 @@ export function SettingsScreen({ account, onSignOut, onOpenUpdateModal }) {
   const [initialSyncStats, setInitialSyncStats] = useState({ localCount: 0, remoteCount: 0 });
 
   const load = useCallback(async () => {
-    const ver = await window.televault?.gdrive?.getAppVersion?.();
+    const ver = (await window.televault?.updater?.getVersion?.()) || (await window.televault?.gdrive?.getAppVersion?.());
     if (ver) setAppVersion(ver);
 
     const result = await settingsApi?.get();

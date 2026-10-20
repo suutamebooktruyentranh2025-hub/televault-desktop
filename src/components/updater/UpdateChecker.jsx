@@ -47,7 +47,7 @@ export function UpdateChecker({ currentVersion, onOpenUpdateModal, autoCheckEnab
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm text-[var(--gd-text)]">TeleVault Desktop</span>
               <span className="px-2 py-0.5 text-[11px] font-mono font-medium rounded-full bg-[var(--gd-primary)]/10 text-[var(--gd-primary)] border border-[var(--gd-primary)]/20">
-                v{currentVersion || '0.3.1'}
+                v{currentVersion || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '')}
               </span>
             </div>
             <span className="text-xs text-[var(--gd-text-secondary)] mt-0.5 truncate">
