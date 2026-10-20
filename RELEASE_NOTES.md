@@ -1,3 +1,27 @@
+# Release Notes - TeleVault Desktop v0.5.0
+
+**Ngày phát hành / Release Date:** 2026-10-20  
+**Phiên bản / Version:** `v0.5.0` (So sánh với `v0.4.0`)  
+**Mục tiêu chính / Milestone:** Tự động trích xuất Nhật ký Thay đổi (Changelog) chi tiết lên GitHub Release, Nâng cấp bộ phân tích changelog sinh động với Badge & Emoji, Sửa triệt để lỗi hiển thị phiên bản tĩnh `v0.3.1` sang phiên bản động thực tế.
+
+---
+
+## 🌟 Điểm nổi bật v0.5.0 (Release Highlights)
+
+- 📝 **Tự động Trích xuất & Đồng bộ Nhật ký Thay đổi (Automated Release Notes)**:
+  - Tự động trích xuất nội dung từ `RELEASE_NOTES.md` hoặc git commits để đưa vào thân bài GitHub Release, loại bỏ hoàn toàn hiện tượng chỉ hiển thị link so sánh của GitHub.
+  - Tích hợp script `extract-release-notes.js` trực tiếp trong quy trình CI/CD GitHub Actions.
+- 🎨 **Nâng cấp Bộ phân tích Changelog với Badge & Emoji (Smart Changelog Parser)**:
+  - Tự động nhận diện các emoji (`✨`, `⚡`, `🐛`, `🔄`, v.v.) và tiền tố (`[Mới]`, `[Sửa lỗi]`, `[Cải tiến]`, Conventional Commits `feat:`, `fix:`, `perf:`).
+  - Tự động lọc bỏ các metadata không cần thiết và gán badge màu sắc trực quan trong hộp thoại cập nhật.
+- 🔧 **Sửa lỗi Hiển thị Phiên bản Ứng dụng (Dynamic Version Resolution)**:
+  - Khắc phục lỗi hiển thị cố định `v0.3.1` trong Cài đặt và Kiểm tra cập nhật do gọi nhầm vào API chưa tồn tại.
+  - Inject trực tiếp biến `__APP_VERSION__` từ `package.json` vào Vite và bổ sung IPC handler `update:getVersion` trả về phiên bản thực tế của Electron.
+- 🧪 **Bổ sung Kiểm thử Đơn vị (Unit Tests)**:
+  - Bổ sung bộ test cho script trích xuất ghi chú và bộ bóc tách changelog.
+
+---
+
 # Release Notes - TeleVault Desktop v0.4.0
 
 **Ngày phát hành / Release Date:** 2026-10-20  
