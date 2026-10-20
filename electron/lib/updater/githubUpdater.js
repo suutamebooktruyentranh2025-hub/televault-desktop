@@ -275,11 +275,15 @@ async function downloadUpdate({ url, filename, destDir, onProgress }) {
 
 /**
  * Thực hiện cài đặt bản cập nhật đã tải về.
+ * - Windows (win32): chạy NSIS installer ở chế độ silent (/S --updated) và tự động restart.
+ * - macOS (darwin): mount DMG ngầm, ghi đè bản cài đặt trong /Applications, unmount và relaunch tự động.
+ *   Nếu có lỗi quyền truy cập hoặc mount thất bại, tự động fallback về mở DMG để người dùng kéo thả.
  * @param {string} filePath 
  * @param {object} [injected] 
  */
 async function installUpdate(filePath, injected = {}) {
-  if (!filePath || !fs.existsSync(filePath)) {
+  const existsSync = injected.existsSync || fs.existsSync;
+  if (!filePath || (!injected.skipFileCheck && !existsSync(filePath))) {
     throw new Error(`Installer file not found at: ${filePath}`);
   }
 
@@ -302,11 +306,60 @@ async function installUpdate(filePath, injected = {}) {
   }
 
   if (platform === 'darwin') {
-    // Mở file DMG để người dùng kéo thả hoặc mount
-    if (doOpenPath) {
-      await doOpenPath(filePath);
+    const { execFile } = require('child_process');
+    const util = require('util');
+    const execFileAsync = injected.execFileAsync || util.promisify(execFile);
+    const readDirSync = injected.readDirSync || fs.readdirSync;
+    const relaunchFn = injected.relaunchFn || ((opts) => app?.relaunch && app.relaunch(opts));
+    const exitFn = injected.exitFn || ((code) => app?.exit && app.exit(code));
+    const mountPoint = injected.mountPoint || `/Volumes/TeleVaultUpdate_${Date.now()}`;
+
+    try {
+      await execFileAsync('hdiutil', ['attach', filePath, '-mountpoint', mountPoint, '-nobrowse', '-quiet']);
+
+      const entries = readDirSync(mountPoint);
+      const appName = entries.find((e) => e.endsWith('.app'));
+      if (!appName) {
+        throw new Error('Không tìm thấy tệp ứng dụng .app trong tệp DMG');
+      }
+
+      const srcApp = path.join(mountPoint, appName);
+
+      // Xác định vị trí app đích: ưu tiên /Applications/<appName>.
+      // Nếu app đang chạy từ một bundle .app khác (ngoại trừ Electron dev runner), ghi đè vị trí đó.
+      let destApp = path.join('/Applications', appName);
+      const currentExec = injected.execPath || process.execPath || '';
+      const match = currentExec.match(/^(.+?\.app)\/Contents\/MacOS\//);
+      if (match && !match[1].includes('Electron.app')) {
+        destApp = match[1];
+      }
+
+      if (existsSync(destApp)) {
+        await execFileAsync('rm', ['-rf', destApp]);
+      }
+      await execFileAsync('cp', ['-R', srcApp, path.dirname(destApp) + '/']);
+      await execFileAsync('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {});
+
+      const execName = appName.replace('.app', '');
+      const newExecPath = path.join(destApp, 'Contents', 'MacOS', execName);
+
+      relaunchFn({ execPath: newExecPath });
+      exitFn(0);
+
+      return { ok: true, platform: 'darwin', action: 'relaunched' };
+    } catch (err) {
+      // Đảm bảo unmount volume DMG nếu còn kẹt
+      try {
+        await execFileAsync('hdiutil', ['detach', mountPoint, '-quiet']);
+      } catch {}
+
+      // Fallback: nếu cài đặt tự động thất bại (ví dụ phân quyền /Applications cần sudo), mở DMG để người dùng cài thủ công
+      if (doOpenPath) {
+        await doOpenPath(filePath);
+        return { ok: true, platform: 'darwin', action: 'opened_fallback', fallback: true, error: err.message };
+      }
+      throw err;
     }
-    return { ok: true, platform: 'darwin' };
   }
 
   throw new Error(`Unsupported platform for auto-install: ${platform}`);

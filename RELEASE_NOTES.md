@@ -1,3 +1,27 @@
+# Release Notes - TeleVault Desktop v0.4.0
+
+**Ngày phát hành / Release Date:** 2026-10-20  
+**Phiên bản / Version:** `v0.4.0` (So sánh với `v0.3.3`)  
+**Mục tiêu chính / Milestone:** Tự động cài đặt và khởi động lại bản cập nhật mới trên macOS (Seamless Silent DMG Auto-Install), Khắc phục triệt để lỗi "File is in use" và nhu cầu kéo thả thủ công vào Applications, Chuẩn hóa đồng bộ nút Cài đặt và Khởi động lại trên mọi nền tảng.
+
+---
+
+## 🌟 Điểm nổi bật v0.4.0 (Release Highlights)
+
+- ⚡ **Tự động Cài đặt và Khởi động lại trên macOS (Seamless DMG Auto-Install)**:
+  - Tự động mount tệp `.dmg` cập nhật ở chế độ ẩn (`hdiutil attach ... -nobrowse -quiet`).
+  - Tự động thay thế tệp ứng dụng trong thư mục `/Applications/` (hoặc bundle `.app` đang chạy) mà người dùng không cần phải thoát app thủ công trước hay kéo thả bằng tay trong Finder.
+  - Tự động unmount ổ đĩa cập nhật và kích hoạt Electron relaunch vào phiên bản mới tức thì.
+  - Tích hợp cơ chế fallback an toàn: tự động mở DMG nếu gặp lỗi phân quyền hệ thống.
+- 🔄 **Đồng bộ hóa Trải nghiệm Cập nhật trên mọi Nền tảng (Cross-platform Consistency)**:
+  - Nút cài đặt trên cả Windows và macOS giờ đây đều hiển thị thống nhất: **"Cài đặt và Khởi động lại"** / **"Install and Restart"**.
+- 🌐 **Chuẩn hóa Quốc tế hóa (i18n)**:
+  - Đồng bộ đối xứng 100% giữa hai từ điển `vi` và `en` trong `locales.js`.
+- 🧪 **Kiểm thử Toàn diện (Unit Tests)**:
+  - Bổ sung bộ test mô phỏng toàn diện quy trình mount, copy, unmount, relaunch và fallback của updater.
+
+---
+
 # Release Notes - TeleVault Desktop v0.3.3
 
 **Ngày phát hành / Release Date:** 2026-10-19  
